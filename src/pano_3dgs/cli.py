@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from PIL import Image
 
 
 DEFAULT_COLMAP = "/home/invs/repos/colmap/build_cuda/src/colmap/exe/colmap"
-DEFAULT_FACES = ["front", "right", "back", "left", "bottom"]
+DEFAULT_FACES = ["front", "right", "back", "left", "top", "bottom"]
 
 FACE_AXES = {
     "front": np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float64),
@@ -30,13 +31,10 @@ FACE_AXES = {
 DYNAMIC_PROMPTS = [
     "person",
     "people",
-    "car",
-    "vehicle",
-    "truck",
-    "bus",
-    "motorcycle",
-    "bicycle",
-    "sky",
+    "camera",
+    "tripod",
+    "selfie stick",
+    "phone",
 ]
 
 
@@ -88,6 +86,15 @@ def env_bool(name: str, default: bool) -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
+def env_bool_or_none(name: str) -> bool | None:
+    value = os.environ.get(name)
+    if value is None:
+        return None
+    if value.lower() in {"", "auto", "none"}:
+        return None
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass
 class Candidate:
     frame_index: int
@@ -132,6 +139,10 @@ def parse_faces(value: str) -> list[str]:
     if invalid:
         raise argparse.ArgumentTypeError(f"unknown face(s): {', '.join(invalid)}")
     return faces
+
+
+def parse_list(value: str) -> list[str]:
+    return [part.strip() for part in value.split(",") if part.strip()]
 
 
 def scene_run_dir(runs_dir: Path, scene: str, rate_hz: float, width: int) -> Path:
@@ -307,7 +318,7 @@ def run_sam3(args: argparse.Namespace) -> None:
         raise SystemExit(f"no frames found in {frames}")
 
     model, processor, torch = load_official_sam3(args)
-    prompts = args.prompt or DYNAMIC_PROMPTS
+    prompts = args.prompt or args.sam3_prompts or DYNAMIC_PROMPTS
     for idx, path in enumerate(image_paths, 1):
         keep = build_sam3_keep_mask(path, prompts, model, processor, torch, args)
         cv2.imwrite(str(out / f"{path.name}.png"), keep)
@@ -386,25 +397,39 @@ def make_colmap_masks(args: argparse.Namespace) -> None:
     if not paths:
         raise SystemExit(f"no frames found in {frames}")
 
-    for path in paths:
+    progress = max(1, args.mask_progress)
+    for idx, path in enumerate(paths, 1):
+        out_path = out / f"{path.name}.png"
+        dyn_path = dynamic / f"{path.name}.png"
+        has_dynamic = dynamic.exists() and dyn_path.exists()
+        use_heuristics = (not has_dynamic) if args.mask_heuristics is None else args.mask_heuristics
+
+        if not use_heuristics and has_dynamic:
+            shutil.copyfile(dyn_path, out_path)
+            action = "copied dynamic mask"
+            if idx == 1 or idx == len(paths) or idx % progress == 0:
+                print(f"[{idx}/{len(paths)}] {path.name}: {action}", flush=True)
+            continue
+
         image = cv2.imread(str(path), cv2.IMREAD_COLOR)
         if image is None:
             raise SystemExit(f"cannot read {path}")
         height, width = image.shape[:2]
         mask = np.full((height, width), 255, np.uint8)
-        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-        if args.sky_mask:
-            bright = hsv[..., 2] > 175
-            low_sat = hsv[..., 1] < 70
-            top_half = np.arange(height)[:, None] < int(0.48 * height)
-            mask[bright & low_sat & top_half] = 0
-        mask[: int(args.zenith_mask * height), :] = 0
-        if args.nadir_mask > 0:
-            mask[int((1.0 - args.nadir_mask) * height) :, :] = 0
+        if use_heuristics:
+            if args.sky_mask:
+                hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+                bright = hsv[..., 2] > 175
+                low_sat = hsv[..., 1] < 70
+                top_half = np.arange(height)[:, None] < int(0.48 * height)
+                mask[bright & low_sat & top_half] = 0
+            if args.zenith_mask > 0:
+                mask[: int(args.zenith_mask * height), :] = 0
+            if args.nadir_mask > 0:
+                mask[int((1.0 - args.nadir_mask) * height) :, :] = 0
 
-        dyn_path = dynamic / f"{path.name}.png"
-        if dynamic.exists() and dyn_path.exists():
+        if has_dynamic:
             dyn = cv2.imread(str(dyn_path), cv2.IMREAD_GRAYSCALE)
             if dyn is None:
                 raise SystemExit(f"cannot read dynamic mask: {dyn_path}")
@@ -412,7 +437,15 @@ def make_colmap_masks(args: argparse.Namespace) -> None:
                 raise SystemExit(f"mask shape mismatch: {dyn_path}")
             mask[dyn == 0] = 0
 
-        cv2.imwrite(str(out / f"{path.name}.png"), mask)
+        cv2.imwrite(str(out_path), mask)
+        if has_dynamic and use_heuristics:
+            action = "wrote dynamic+heuristic mask"
+        elif use_heuristics:
+            action = "wrote heuristic mask"
+        else:
+            action = "wrote white mask"
+        if idx == 1 or idx == len(paths) or idx % progress == 0:
+            print(f"[{idx}/{len(paths)}] {path.name}: {action}", flush=True)
     print(f"done: wrote {len(paths)} masks to {out}", flush=True)
 
 
@@ -425,6 +458,9 @@ def run_colmap(args: argparse.Namespace) -> None:
     db = workspace / "database.db"
     sparse = workspace / "sparse"
     sparse_txt = workspace / "sparse_txt"
+    if getattr(args, "clean_colmap", False) and workspace.exists():
+        print(f"cleaning COLMAP workspace: {workspace}", flush=True)
+        shutil.rmtree(workspace)
     ensure_dir(workspace)
     ensure_dir(sparse)
     ensure_dir(sparse_txt)
@@ -659,6 +695,60 @@ def mask_output_names(face_name: str, mode: str) -> list[str]:
     return [f"{face_name}.png", f"{Path(face_name).stem}.png"]
 
 
+def write_image(path: Path, image: np.ndarray, params: list[int] | None = None) -> None:
+    if not cv2.imwrite(str(path), image, params or []):
+        raise RuntimeError(f"failed to write image: {path}")
+
+
+def convert_cubemap_image(
+    idx: int,
+    image: ColmapImage,
+    *,
+    faces: list[str],
+    image_ext: str,
+    cubemap_jpg_quality: int,
+    mask_name_mode: str,
+    maps: dict[str, tuple[np.ndarray, np.ndarray]],
+    source_images: Path,
+    source_masks: Path,
+    out_images: Path,
+    out_masks: Path,
+) -> list[tuple[int, np.ndarray, np.ndarray, str]]:
+    src = cv2.imread(str(source_images / image.name), cv2.IMREAD_COLOR)
+    if src is None:
+        raise RuntimeError(f"cannot read image: {source_images / image.name}")
+    mask = None
+    mask_path = source_masks / f"{image.name}.png"
+    if source_masks.exists() and mask_path.exists():
+        mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+        if mask is None:
+            raise RuntimeError(f"cannot read mask: {mask_path}")
+
+    records: list[tuple[int, np.ndarray, np.ndarray, str]] = []
+    source_rot = qvec_to_rotmat(image.qvec)
+    stem = Path(image.name).stem
+    base_id = (idx - 1) * len(faces) + 1
+
+    for face_idx, face in enumerate(faces):
+        face_name = f"{stem}_{face}.{image_ext}"
+        map_x, map_y = maps[face]
+        face_image = remap_image(src, map_x, map_y, is_mask=False)
+        if image_ext == "jpg":
+            write_image(out_images / face_name, face_image, [cv2.IMWRITE_JPEG_QUALITY, cubemap_jpg_quality])
+        else:
+            write_image(out_images / face_name, face_image)
+
+        if mask is not None:
+            face_mask = remap_image(mask, map_x, map_y, is_mask=True)
+            for name in mask_output_names(face_name, mask_name_mode):
+                write_image(out_masks / name, face_mask)
+
+        face_from_equi = FACE_AXES[face]
+        records.append((base_id + face_idx, rotmat_to_qvec(face_from_equi @ source_rot), face_from_equi @ image.tvec, face_name))
+
+    return records
+
+
 def convert_cubemap(args: argparse.Namespace) -> None:
     run = args.run
     sparse_txt = run / "colmap_cli_shared" / "sparse_txt"
@@ -678,37 +768,54 @@ def convert_cubemap(args: argparse.Namespace) -> None:
     images = read_images_txt(sparse_txt / "images.txt")
     maps = {face: build_face_map(face, args.face_size, args.fov, src_width, src_height) for face in args.faces}
 
-    records: list[tuple[int, np.ndarray, np.ndarray, str]] = []
-    next_id = 1
-    for idx, image in enumerate(images, 1):
-        src = cv2.imread(str(source_images / image.name), cv2.IMREAD_COLOR)
-        if src is None:
-            raise SystemExit(f"cannot read image: {source_images / image.name}")
-        mask = None
-        mask_path = source_masks / f"{image.name}.png"
-        if source_masks.exists() and mask_path.exists():
-            mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
-        source_rot = qvec_to_rotmat(image.qvec)
-        stem = Path(image.name).stem
+    workers = args.cubemap_workers if args.cubemap_workers > 0 else args.threads
+    workers = max(1, min(workers, len(images) or 1))
+    records_by_image: dict[int, list[tuple[int, np.ndarray, np.ndarray, str]]] = {}
+    print(f"cubemap workers: {workers}", flush=True)
 
-        for face in args.faces:
-            face_name = f"{stem}_{face}.{args.image_ext}"
-            map_x, map_y = maps[face]
-            face_image = remap_image(src, map_x, map_y, is_mask=False)
-            if args.image_ext == "jpg":
-                cv2.imwrite(str(out_images / face_name), face_image, [cv2.IMWRITE_JPEG_QUALITY, args.cubemap_jpg_quality])
-            else:
-                cv2.imwrite(str(out_images / face_name), face_image)
+    if workers == 1:
+        for idx, image in enumerate(images, 1):
+            records_by_image[idx] = convert_cubemap_image(
+                idx,
+                image,
+                faces=args.faces,
+                image_ext=args.image_ext,
+                cubemap_jpg_quality=args.cubemap_jpg_quality,
+                mask_name_mode=args.mask_name_mode,
+                maps=maps,
+                source_images=source_images,
+                source_masks=source_masks,
+                out_images=out_images,
+                out_masks=out_masks,
+            )
+            print(f"[{idx}/{len(images)}] {image.name}: wrote {len(args.faces)} faces", flush=True)
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(
+                    convert_cubemap_image,
+                    idx,
+                    image,
+                    faces=args.faces,
+                    image_ext=args.image_ext,
+                    cubemap_jpg_quality=args.cubemap_jpg_quality,
+                    mask_name_mode=args.mask_name_mode,
+                    maps=maps,
+                    source_images=source_images,
+                    source_masks=source_masks,
+                    out_images=out_images,
+                    out_masks=out_masks,
+                ): (idx, image.name)
+                for idx, image in enumerate(images, 1)
+            }
+            done = 0
+            for future in as_completed(futures):
+                idx, image_name = futures[future]
+                records_by_image[idx] = future.result()
+                done += 1
+                print(f"[{done}/{len(images)}] {image_name}: wrote {len(args.faces)} faces", flush=True)
 
-            if mask is not None:
-                face_mask = remap_image(mask, map_x, map_y, is_mask=True)
-                for name in mask_output_names(face_name, args.mask_name_mode):
-                    cv2.imwrite(str(out_masks / name), face_mask)
-
-            face_from_equi = FACE_AXES[face]
-            records.append((next_id, rotmat_to_qvec(face_from_equi @ source_rot), face_from_equi @ image.tvec, face_name))
-            next_id += 1
-        print(f"[{idx}/{len(images)}] {image.name}: wrote {len(args.faces)} faces", flush=True)
+    records = [record for idx in sorted(records_by_image) for record in records_by_image[idx]]
 
     write_cubemap_camera(out_sparse_txt / "cameras.txt", args.face_size, args.fov)
     write_cubemap_images(out_sparse_txt / "images.txt", records)
@@ -732,10 +839,12 @@ def run_all(args: argparse.Namespace) -> None:
             dst = target / path.name
             if not dst.exists():
                 os.link(path, dst)
+    elif args.skip_sam3:
+        print("SAM3 skipped by --skip-sam3", flush=True)
     elif args.sam3_model:
         run_sam3(args)
     else:
-        print("SAM3 skipped: no --sam3-model or --dynamic-mask-dir provided", flush=True)
+        raise SystemExit("SAM3 is enabled by default, but --sam3-model is not set. Use --skip-sam3 to continue without SAM3 masks.")
 
     make_colmap_masks(args)
     run_colmap(args)
@@ -750,6 +859,7 @@ def add_colmap_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--colmap", type=Path, default=env_path("PANO3DGS_COLMAP", DEFAULT_COLMAP))
     parser.add_argument("--gpu-index", default=env_str("PANO3DGS_GPU_INDEX", "0"))
     parser.add_argument("--threads", type=int, default=env_int("PANO3DGS_THREADS", 8))
+    parser.add_argument("--clean-colmap", action=argparse.BooleanOptionalAction, default=env_bool("PANO3DGS_CLEAN_COLMAP", False))
     parser.add_argument("--max-features", type=int, default=env_int("PANO3DGS_MAX_FEATURES", 12000))
     parser.add_argument("--overlap", type=int, default=env_int("PANO3DGS_OVERLAP", 25))
     parser.add_argument("--equirect-width", type=int, default=env_int("PANO3DGS_EQUIRECT_WIDTH", 7680))
@@ -770,6 +880,8 @@ def add_extract_options(parser: argparse.ArgumentParser) -> None:
 
 def add_mask_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dynamic-mask-dir", type=Path, default=env_path("PANO3DGS_DYNAMIC_MASK_DIR"))
+    parser.add_argument("--mask-heuristics", action=argparse.BooleanOptionalAction, default=env_bool_or_none("PANO3DGS_MASK_HEURISTICS"))
+    parser.add_argument("--mask-progress", type=int, default=env_int("PANO3DGS_MASK_PROGRESS", 50))
     parser.add_argument("--sky-mask", action=argparse.BooleanOptionalAction, default=env_bool("PANO3DGS_SKY_MASK", True))
     parser.add_argument("--zenith-mask", type=float, default=env_float("PANO3DGS_ZENITH_MASK", 0.04))
     parser.add_argument("--nadir-mask", type=float, default=env_float("PANO3DGS_NADIR_MASK", 0.04))
@@ -781,6 +893,7 @@ def add_sam3_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--device", default=env_str("PANO3DGS_DEVICE", "cuda:0"))
     parser.add_argument("--dtype", choices=["auto", "float32", "float16", "bfloat16"], default=env_str("PANO3DGS_DTYPE", "bfloat16"))
     parser.add_argument("--prompt", action="append")
+    parser.add_argument("--sam3-prompts", type=parse_list, default=parse_list(env_str("PANO3DGS_SAM3_PROMPTS", "")))
     parser.add_argument("--sam3-roi", type=parse_box, action="append", default=[])
     parser.add_argument("--score", type=float, default=env_float("PANO3DGS_SAM3_SCORE", 0.35))
     parser.add_argument("--min-area", type=float, default=env_float("PANO3DGS_SAM3_MIN_AREA", 0.00005))
@@ -794,6 +907,7 @@ def add_cubemap_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--fov", type=float, default=env_float("PANO3DGS_FOV", 90.0))
     parser.add_argument("--image-ext", choices=["jpg", "png"], default=env_str("PANO3DGS_IMAGE_EXT", "jpg"))
     parser.add_argument("--cubemap-jpg-quality", type=int, default=env_int("PANO3DGS_CUBEMAP_JPG_QUALITY", 95))
+    parser.add_argument("--cubemap-workers", type=int, default=env_int("PANO3DGS_CUBEMAP_WORKERS", 0))
     parser.add_argument("--mask-name-mode", choices=["colmap", "stem", "both"], default=env_str("PANO3DGS_MASK_NAME_MODE", "colmap"))
 
 
@@ -836,6 +950,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_extract_options_no_video(p)
     add_mask_options(p)
     add_sam3_options(p)
+    p.add_argument("--skip-sam3", action="store_true", default=env_bool("PANO3DGS_SKIP_SAM3", False))
     add_colmap_options(p)
     add_cubemap_options(p)
     p.set_defaults(func=run_all)

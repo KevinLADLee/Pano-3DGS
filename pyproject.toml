@@ -5,9 +5,13 @@ description = "Pipeline utilities for converting 360 equirectangular videos into
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+  "einops",
   "numpy",
   "opencv-python",
   "pillow",
+  "psutil",
+  "pycocotools",
+  "sam3 @ file:///tmp/sam3-official",
 ]
 
 [project.scripts]
@@ -16,3 +20,6 @@ pano-3dgs = "pano_3dgs.cli:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
