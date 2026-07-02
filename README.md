@@ -9,10 +9,13 @@ Pipeline:
 360 video
   -> sharp equirectangular frames + SAM3 masks
   -> COLMAP masks
-  -> COLMAP EQUIRECTANGULAR SfM
-  -> cubemap PINHOLE COLMAP dataset
+  -> perspective PINHOLE panorama SfM
   -> standard 3DGS / LichtFeld Studio
 ```
+
+The older equirectangular-COLMAP-to-cubemap path is still available through
+`colmap` and `cubemap`, but the recommended workflow for Caspar and common 3DGS
+tools is `panorama-sfm` with perspective virtual `PINHOLE` cameras.
 
 ## Setup
 
@@ -32,7 +35,7 @@ cp .env.example .env
 Edit `.env` for your machine. Common keys:
 
 ```bash
-PANO3DGS_COLMAP=/home/invs/repos/colmap/build_cuda/src/colmap/exe/colmap
+PANO3DGS_COLMAP=/home/invs/repos/colmap_prebuild/bin/colmap
 PANO3DGS_RUNS_DIR=runs
 PANO3DGS_GPU_INDEX=0
 PANO3DGS_SAM3_MODEL=/home/invs/research/ava360_3dgs/models/facebook_sam3
@@ -58,6 +61,59 @@ Optional SAM3 runtime needs the official SAM3 checkout at the path referenced by
 git clone https://github.com/facebookresearch/sam3.git /tmp/sam3-official
 uv sync
 ```
+
+### Prebuilt COLMAP / PyCOLMAP
+
+For the Caspar panorama workflow, use the matching prebuilt COLMAP repo and its
+PyCOLMAP wheel. The local prebuild expected by the defaults is:
+
+```text
+/home/invs/repos/colmap_prebuild/
+  bin/colmap
+  lib/
+  pycolmap-4.1.0+cu128.bundled.cudss-cp311-cp311-manylinux_2_35_x86_64.whl
+```
+
+If you start from the release archive, unpack it to that path:
+
+```bash
+mkdir -p /home/invs/repos
+unzip COLMAP-4.1.0-ubuntu-22.04-CUDA-cuDSS-Caspar.zip -d /home/invs/repos/colmap_prebuild
+```
+
+Then point the CLI at the prebuilt binary in `.env`:
+
+```bash
+PANO3DGS_COLMAP=/home/invs/repos/colmap_prebuild/bin/colmap
+```
+
+Install the bundled PyCOLMAP wheel into this project's uv environment. PyCOLMAP
+is intentionally not pinned in `pyproject.toml`, because the CUDA/Caspar wheel is
+machine-specific. On the current Linux/Python 3.11 setup:
+
+```bash
+uv pip install /home/invs/repos/colmap_prebuild/pycolmap-4.1.0+cu128.bundled.cudss-cp311-cp311-manylinux_2_35_x86_64.whl
+```
+
+Verify both pieces before running SfM:
+
+```bash
+/home/invs/repos/colmap_prebuild/bin/colmap version
+uv run python - <<'PY'
+import pycolmap
+print(pycolmap.__version__, "cuda=", pycolmap.has_cuda)
+print("cuda devices=", pycolmap.get_num_cuda_devices())
+print("caspar=", hasattr(pycolmap, "CasparBundleAdjustmentOptions"))
+PY
+```
+
+The prebuild used here is COLMAP 4.1.0 for Ubuntu 22.04 with CUDA 12.8, cuDSS,
+and Caspar enabled. Caspar currently works with the rendered `PINHOLE` virtual
+cameras used by `panorama-sfm`; do not switch it to `SIMPLE_PINHOLE` when using
+`--panorama-ba-backend caspar`.
+
+Torch is pinned to a CUDA 12 compatible pair (`torch==2.10.0`,
+`torchvision==0.25.0`) for SAM3.
 
 ## One-Command Flow
 
@@ -163,6 +219,121 @@ uv run pano-3dgs cubemap \
   --run runs/xianjin_cofe_2hz_7680
 ```
 
+Run the recommended perspective panorama SfM workflow:
+
+```bash
+uv run pano-3dgs panorama-sfm \
+  --run runs/xianjin_cofe_2hz_7680 \
+  --clean-panorama-sfm \
+  --pano-render-type perspective_overlapping \
+  --panorama-virtual-camera-model pinhole
+```
+
+To try COLMAP's experimental Caspar GPU bundle-adjustment backend for the
+incremental mapper, use the prebuilt PyCOLMAP wheel above and keep the virtual
+camera model as `pinhole`:
+
+```bash
+uv run pano-3dgs panorama-sfm \
+  --run runs/xianjin_cofe_2hz_7680 \
+  --clean-panorama-sfm \
+  --pano-render-type perspective_overlapping \
+  --panorama-virtual-camera-model pinhole \
+  --panorama-ba-backend caspar \
+  --panorama-mapper incremental \
+  --panorama-matcher sequential
+```
+
+Caspar is only used for `--panorama-mapper incremental`. It supports this
+workflow because the rendered virtual cameras are `PINHOLE` and the rig sensor
+poses are fixed. The public `pycolmap-cuda12` wheel may expose the `CASPAR`
+enum while still being compiled without Caspar support; in that case the command
+will fail early and ask you to build PyCOLMAP from source with Caspar enabled.
+
+By default, sequential matching does not run vocabulary-tree loop detection.
+This avoids COLMAP/PyCOLMAP trying to download
+`vocab_tree_faiss_flickr100K_words256K.bin` at runtime. If loop detection is
+needed, download the vocabulary tree yourself and pass it explicitly:
+
+```bash
+uv run pano-3dgs panorama-sfm \
+  --run runs/xianjin_cofe_2hz_7680 \
+  --panorama-loop-detection \
+  --panorama-vocab-tree-path /path/to/vocab_tree_faiss_flickr100K_words256K.bin
+```
+
+This renders each equirectangular frame into the COLMAP example's default
+`perspective_overlapping` rig: 4 yaw steps x 3 pitch angles = 12 overlapping
+virtual PINHOLE cameras. `colmap_masks/` are projected into those views and
+intersected with COLMAP's per-virtual-camera masks. The 3DGS-friendly output is:
+
+```text
+runs/<scene>_2hz_7680/panorama_sfm/
+  images/
+  masks/
+  database.db
+  sparse/0/
+  sparse_txt/0/
+  sparse_equirectangular/0/
+  sparse_equirectangular_txt/0/
+```
+
+Use `panorama_sfm/images` with `panorama_sfm/sparse/0` for PINHOLE 3DGS import.
+The `sparse_equirectangular` model maps the reconstruction back to the original
+panorama frames and is mainly useful for inspection or tools that support
+COLMAP's `EQUIRECTANGULAR` camera model.
+
+Existing perspective images and masks are reused by default. To force rendering
+again after changing masks or render settings, use:
+
+```bash
+uv run pano-3dgs panorama-sfm \
+  --run runs/xianjin_cofe_2hz_7680 \
+  --rerender-perspective
+```
+
+The feature/match database is also reused by default. This means you can switch
+mapper settings, for example trying Caspar, without re-rendering images or
+re-running feature extraction / matching:
+
+```bash
+uv run pano-3dgs panorama-sfm \
+  --run runs/xianjin_cofe_2hz_7680 \
+  --panorama-ba-backend caspar
+```
+
+Use `--rerun-panorama-features` or `--rerun-panorama-matching` when you change
+image, mask, feature, matching, or rig settings. `--clean-panorama-sfm` removes
+the whole panorama SfM workspace and recomputes everything.
+
+For a new video with the current perspective + Caspar + PINHOLE workflow, run
+the frame/mask steps first and then run `panorama-sfm`:
+
+```bash
+RUN=runs/xianjin_cofe_2hz_7680
+VIDEO=/home/invs/datasets/avata360_data/xianjin_cofe.mp4
+
+uv run pano-3dgs extract \
+  --run "$RUN" \
+  --video "$VIDEO" \
+  --window-seconds 0.5
+
+uv run pano-3dgs sam3 \
+  --run "$RUN"
+
+uv run pano-3dgs masks \
+  --run "$RUN"
+
+uv run pano-3dgs panorama-sfm \
+  --run "$RUN" \
+  --clean-panorama-sfm \
+  --pano-render-type perspective_overlapping \
+  --panorama-virtual-camera-model pinhole \
+  --panorama-ba-backend caspar \
+  --panorama-mapper incremental \
+  --panorama-matcher sequential
+```
+
 ## Environment Variables
 
 `.env` keys currently supported:
@@ -205,6 +376,22 @@ PANO3DGS_IMAGE_EXT
 PANO3DGS_CUBEMAP_JPG_QUALITY
 PANO3DGS_CUBEMAP_WORKERS
 PANO3DGS_MASK_NAME_MODE
+PANO3DGS_PYCOLMAP_PATH
+PANO3DGS_REQUIRE_PYCOLMAP_CUDA
+PANO3DGS_PANORAMA_SFM_OUTPUT
+PANO3DGS_PANO_RENDER_TYPE
+PANO3DGS_PANORAMA_VIRTUAL_CAMERA_MODEL
+PANO3DGS_PANORAMA_MATCHER
+PANO3DGS_PANORAMA_MAPPER
+PANO3DGS_PANORAMA_BA_BACKEND
+PANO3DGS_PANORAMA_LOOP_DETECTION
+PANO3DGS_PANORAMA_VOCAB_TREE_PATH
+PANO3DGS_PANORAMA_WORKERS
+PANO3DGS_PANORAMA_USE_INPUT_MASKS
+PANO3DGS_RERENDER_PERSPECTIVE
+PANO3DGS_RERUN_PANORAMA_FEATURES
+PANO3DGS_RERUN_PANORAMA_MATCHING
+PANO3DGS_CLEAN_PANORAMA_SFM
 ```
 
 `PANO3DGS_CUBEMAP_WORKERS=0` lets the cubemap converter use `PANO3DGS_THREADS`.

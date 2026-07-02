@@ -12,6 +12,8 @@ dependencies = [
   "psutil",
   "pycocotools",
   "sam3 @ file:///tmp/sam3-official",
+  "torch==2.10.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchvision==0.25.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
 [project.scripts]

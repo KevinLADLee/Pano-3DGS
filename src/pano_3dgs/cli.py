@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image
 
 
-DEFAULT_COLMAP = "/home/invs/repos/colmap/build_cuda/src/colmap/exe/colmap"
+DEFAULT_COLMAP = "/home/invs/repos/colmap_prebuild/bin/colmap"
 DEFAULT_FACES = ["front", "right", "back", "left", "top", "bottom"]
 
 FACE_AXES = {
@@ -825,6 +825,36 @@ def convert_cubemap(args: argparse.Namespace) -> None:
     print(f"done: {out}", flush=True)
 
 
+def convert_sparse_models_to_text(colmap: Path, root: Path, binary_dir_name: str, text_dir_name: str) -> None:
+    binary_root = root / binary_dir_name
+    text_root = root / text_dir_name
+    if not binary_root.exists():
+        return
+    for model_dir in sorted(p for p in binary_root.iterdir() if p.is_dir()):
+        out_dir = text_root / model_dir.name
+        ensure_dir(out_dir)
+        run_cmd(
+            [
+                str(colmap),
+                "model_converter",
+                "--input_path",
+                str(model_dir),
+                "--output_path",
+                str(out_dir),
+                "--output_type",
+                "TXT",
+            ]
+        )
+
+
+def run_panorama_sfm_workflow(args: argparse.Namespace) -> None:
+    from pano_3dgs.panorama_sfm import run_panorama_sfm
+
+    output_path = run_panorama_sfm(args)
+    convert_sparse_models_to_text(args.colmap, output_path, "sparse", "sparse_txt")
+    convert_sparse_models_to_text(args.colmap, output_path, "sparse_equirectangular", "sparse_equirectangular_txt")
+
+
 def run_all(args: argparse.Namespace) -> None:
     args.run = scene_run_dir(args.runs_dir, args.scene, args.rate_hz, args.equirect_width)
     extract_args = argparse.Namespace(**vars(args))
@@ -911,6 +941,73 @@ def add_cubemap_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--mask-name-mode", choices=["colmap", "stem", "both"], default=env_str("PANO3DGS_MASK_NAME_MODE", "colmap"))
 
 
+def add_panorama_sfm_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--pycolmap-path", type=Path, default=env_path("PANO3DGS_PYCOLMAP_PATH"))
+    parser.add_argument(
+        "--require-pycolmap-cuda",
+        action=argparse.BooleanOptionalAction,
+        default=env_bool("PANO3DGS_REQUIRE_PYCOLMAP_CUDA", True),
+    )
+    parser.add_argument("--panorama-sfm-output", type=Path, default=env_path("PANO3DGS_PANORAMA_SFM_OUTPUT"))
+    parser.add_argument(
+        "--pano-render-type",
+        choices=["perspective_overlapping", "perspective_non_overlapping"],
+        default=env_str("PANO3DGS_PANO_RENDER_TYPE", "perspective_overlapping"),
+    )
+    parser.add_argument(
+        "--panorama-virtual-camera-model",
+        choices=["pinhole", "simple_pinhole"],
+        default=env_str("PANO3DGS_PANORAMA_VIRTUAL_CAMERA_MODEL", "pinhole"),
+    )
+    parser.add_argument(
+        "--panorama-matcher",
+        choices=["sequential", "exhaustive", "vocabtree", "spatial"],
+        default=env_str("PANO3DGS_PANORAMA_MATCHER", "sequential"),
+    )
+    parser.add_argument(
+        "--panorama-mapper",
+        choices=["incremental", "global"],
+        default=env_str("PANO3DGS_PANORAMA_MAPPER", "incremental"),
+    )
+    parser.add_argument(
+        "--panorama-ba-backend",
+        choices=["ceres", "caspar"],
+        default=env_str("PANO3DGS_PANORAMA_BA_BACKEND", "ceres"),
+    )
+    parser.add_argument(
+        "--panorama-loop-detection",
+        action=argparse.BooleanOptionalAction,
+        default=env_bool("PANO3DGS_PANORAMA_LOOP_DETECTION", False),
+    )
+    parser.add_argument("--panorama-vocab-tree-path", type=Path, default=env_path("PANO3DGS_PANORAMA_VOCAB_TREE_PATH"))
+    parser.add_argument("--panorama-workers", type=int, default=env_int("PANO3DGS_PANORAMA_WORKERS", 0))
+    parser.add_argument(
+        "--panorama-use-input-masks",
+        action=argparse.BooleanOptionalAction,
+        default=env_bool("PANO3DGS_PANORAMA_USE_INPUT_MASKS", True),
+    )
+    parser.add_argument(
+        "--rerender-perspective",
+        action=argparse.BooleanOptionalAction,
+        default=env_bool("PANO3DGS_RERENDER_PERSPECTIVE", False),
+    )
+    parser.add_argument(
+        "--rerun-panorama-features",
+        action=argparse.BooleanOptionalAction,
+        default=env_bool("PANO3DGS_RERUN_PANORAMA_FEATURES", False),
+    )
+    parser.add_argument(
+        "--rerun-panorama-matching",
+        action=argparse.BooleanOptionalAction,
+        default=env_bool("PANO3DGS_RERUN_PANORAMA_MATCHING", False),
+    )
+    parser.add_argument(
+        "--clean-panorama-sfm",
+        action=argparse.BooleanOptionalAction,
+        default=env_bool("PANO3DGS_CLEAN_PANORAMA_SFM", False),
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     load_dotenv()
     parser = argparse.ArgumentParser(prog="pano-3dgs")
@@ -941,6 +1038,12 @@ def build_parser() -> argparse.ArgumentParser:
     add_colmap_options(p)
     add_cubemap_options(p)
     p.set_defaults(func=convert_cubemap)
+
+    p = sub.add_parser("panorama-sfm")
+    add_common_run(p)
+    add_colmap_options(p)
+    add_panorama_sfm_options(p)
+    p.set_defaults(func=run_panorama_sfm_workflow)
 
     p = sub.add_parser("run")
     p.add_argument("--video", type=Path, required=True)
