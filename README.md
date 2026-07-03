@@ -66,6 +66,14 @@ The recommended panorama workflow uses PyCOLMAP directly. For Caspar, install a
 PyCOLMAP wheel compiled from the matching COLMAP/Caspar build:
 
 ```text
+https://github.com/lyehe/build_gpu_colmap/releases/tag/v4.1.0
+```
+
+This release provides COLMAP 4.1.0 archives and matching `pycolmap` wheels.
+For this project, install the wheel that matches your Python version, platform,
+and CUDA/runtime variant:
+
+```text
 /path/to/pycolmap-*.whl
 ```
 
