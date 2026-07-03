@@ -1,21 +1,16 @@
-# pano-3dgs Workflow Summary
+# pano-3dgs 工作流总结
 
-This document summarizes the current pipeline, tool choices, backend choices,
-and the assumptions behind them.
+本文档总结当前 `pano-3dgs` 的整体流程、工具选择、backend 选择，以及这些选择背后的假设。
 
-## Goal
+## 目标
 
-`pano-3dgs` converts a pre-stitched 360 equirectangular MP4 into a COLMAP
-dataset that can be imported by standard 3D Gaussian Splatting tools.
+`pano-3dgs` 的目标是把已经拼接好的 360 equirectangular MP4 视频转换成标准 COLMAP 数据集，使其可以被常见的 3D Gaussian Splatting 工具导入。
 
-The preferred output for current 3DGS tooling is not an equirectangular COLMAP
-model. The preferred output is a perspective `PINHOLE` model rendered from the
-360 frames, because common 3DGS importers and the Caspar bundle-adjustment path
-work reliably with ordinary `PINHOLE` cameras.
+当前推荐输出不是 equirectangular COLMAP 模型，而是从 360 全景帧渲染出来的 perspective `PINHOLE` 模型。原因是常见 3DGS 导入工具和 Caspar bundle-adjustment 路径都更稳定地支持普通 `PINHOLE` 相机。
 
-## Recommended Workflow
+## 推荐工作流
 
-For a new video, the current recommended workflow is:
+对一个新视频，当前推荐流程是：
 
 ```bash
 VIDEO=/path/to/video.mp4
@@ -39,18 +34,13 @@ uv run pano-3dgs panorama-sfm \
   --panorama-matcher sequential
 ```
 
-The `sam3` command now writes both `dynamic_masks/` and merged `colmap_masks/`
-by default, so a separate `masks` command is normally unnecessary.
+现在 `sam3` 命令默认会同时写出 `dynamic_masks/` 和合并后的 `colmap_masks/`，所以通常不需要再单独运行 `masks` 命令。
 
-The `run` command is still available, and it now derives the run name from the
-MP4 filename if `--scene` is omitted. However, `run` currently finishes with the
-older equirectangular COLMAP plus cubemap conversion path. For the current
-perspective + Caspar workflow, prefer the explicit `extract -> sam3 ->
-panorama-sfm` sequence above.
+`run` 命令仍然可用，并且在省略 `--scene` 时会自动根据 MP4 文件名生成 run 目录名。但是 `run` 当前结束于旧的 equirectangular COLMAP + cubemap 转换路径。对于当前推荐的 perspective + Caspar 工作流，优先使用显式的 `extract -> sam3 -> panorama-sfm` 三步。
 
-## Output Layout
+## 输出目录
 
-A typical run directory looks like this:
+典型 run 目录如下：
 
 ```text
 runs/<video_stem>_2hz_7680/
@@ -76,132 +66,101 @@ runs/<video_stem>_2hz_7680/
     sparse_equirectangular_txt/0/
 ```
 
-Use `panorama_sfm/images/` with `panorama_sfm/sparse/0/` for standard 3DGS
-import. The `sparse_equirectangular` model is a convenience conversion back to
-the original panorama frames for inspection or tooling that explicitly supports
-COLMAP's `EQUIRECTANGULAR` camera model.
+标准 3DGS 导入应使用 `panorama_sfm/images/` 和 `panorama_sfm/sparse/0/`。`sparse_equirectangular` 是把重建结果转换回原始全景帧坐标系后的辅助模型，主要用于检查，或用于明确支持 COLMAP `EQUIRECTANGULAR` 相机模型的工具。
 
-## Step Details
+## 步骤细节
 
-### 1. Frame Extraction
+### 1. 帧抽取
 
-`extract` opens the MP4 with OpenCV, splits it into fixed time windows, scores
-every frame in each window, and writes the sharpest frame per window.
+`extract` 使用 OpenCV 打开 MP4，把视频切成固定时间窗口，对每个窗口内的所有帧打分，并写出该窗口里最清晰的一帧。
 
-Current default behavior:
+当前默认行为：
 
-- `--window-seconds 0.5`, equivalent to 2 Hz for normal video.
-- Sharpness is Laplacian variance on grayscale.
-- The sharpness score is computed after optional downscale to
-  `--scale-width 1920`.
-- The default ROI is `0.0,0.08,1.0,0.92`, ignoring the extreme zenith and nadir
-  bands when scoring sharpness.
-- Output filenames include sequence index, timestamp, and original frame index.
-- `frames/sharpest_frames.csv` records the selected frame metadata and score.
+- `--window-seconds 0.5`，相当于普通视频下 2 Hz 采样。
+- 清晰度使用灰度图 Laplacian variance。
+- 打分前会按需缩放到 `--scale-width 1920`。
+- 默认 ROI 是 `0.0,0.08,1.0,0.92`，打分时忽略最顶部 zenith 和最底部 nadir 区域。
+- 输出文件名包含序号、时间戳和原始 frame index。
+- `frames/sharpest_frames.csv` 记录被选中帧的 metadata 和 score。
 
-This extraction logic is intentionally simple: it guarantees temporal coverage
-and avoids selecting blurry frames, but it does not yet reason about camera pose,
-scene overlap, optical flow, or feature baseline.
+这个抽帧逻辑是有意保持简单的：它保证时间上均匀覆盖，并尽量避开模糊帧；但它还不会根据相机位姿、场景 overlap、optical flow 或特征 baseline 做判断。
 
-For reconstruction, this is a reasonable first-stage sampler when the input
-video is a smooth walk-through or handheld scan. It does not guarantee that
-selected frames are spatially well spaced. If the camera moves very slowly, 2 Hz
-can still produce many near-duplicate views. If the camera moves quickly or
-turns sharply, 2 Hz may skip useful coverage.
+从三维重建角度看，如果输入视频是平滑行走或手持扫描，这个抽帧策略可以作为第一阶段采样。但它不能保证选出的帧在空间上足够分散。如果相机移动很慢，2 Hz 仍然可能产生很多过近视角；如果相机移动很快或快速转向，2 Hz 也可能漏掉有用覆盖。
 
-Practical rate choices:
+实用采样建议：
 
-- Normal walking capture: `--window-seconds 0.5` or `run --rate-hz 2`.
-- Very slow capture or long static pauses: use 1 Hz or 0.5 Hz.
-- Fast motion, turns, clutter, or narrow spaces: use 3 Hz or denser, then prune
-  if needed.
+- 正常行走采集：`--window-seconds 0.5` 或 `run --rate-hz 2`。
+- 很慢的采集或长时间静止：使用 1 Hz 或 0.5 Hz。
+- 快速移动、转弯、复杂遮挡、狭窄空间：使用 3 Hz 或更密集采样，之后再做 pruning。
 
-A stronger future version should use a two-stage sampler: first select sharp
-candidate frames densely, then remove frames that are too visually close using
-feature overlap, optical flow, or estimated pose baseline while preserving loop
-and coverage points.
+更强的后续版本应采用两阶段采样：先密集选出清晰候选帧，再用 feature overlap、optical flow 或估计 pose baseline 去掉过近视角，同时保留 loop 和覆盖关键点。
 
-### 2. SAM3 Dynamic Masking
+### 2. SAM3 动态物体 mask
 
-`sam3` uses the official SAM3 implementation vendored as a git submodule at
-`third_party/sam3`. This avoids relying on a temporary external checkout.
+`sam3` 使用官方 SAM3 实现，并把它作为 git submodule 放在 `third_party/sam3`。这样比从 `/tmp` 或其他临时 checkout import 更可靠。
 
-The project dependency points to the local submodule:
+项目依赖指向本地 submodule：
 
 ```toml
 [tool.uv.sources]
 sam3 = { path = "third_party/sam3" }
 ```
 
-SAM3 loads the checkpoint from `PANO3DGS_SAM3_MODEL` or `--sam3-model`.
-The expected local model directory can contain `sam3.pt`.
+SAM3 从 `PANO3DGS_SAM3_MODEL` 或 `--sam3-model` 加载 checkpoint。预期的本地模型目录可以包含 `sam3.pt`。
 
-The default dynamic prompts target objects that should not contribute stable
-3D structure, such as people, camera rigs, tripods, selfie sticks, and phones.
-Local `.env` can extend these prompts. For example, adding `sky` can help when
-the sky produces unstable or unwanted features, but it may also remove useful
-far-background constraints if the prompt over-segments.
+默认动态 prompts 针对不应参与稳定三维结构的对象，例如人、相机设备、三脚架、自拍杆和手机。本地 `.env` 可以扩展这些 prompts。例如加入 `sky` 可以在天空产生不稳定或不需要的特征时有所帮助，但如果 prompt 过度分割，也可能移除有用的远处背景约束。
 
-SAM3 writes masks using COLMAP convention:
+SAM3 写出的 mask 使用 COLMAP 约定：
 
 ```text
 white = keep
 black = ignore
 ```
 
-It also writes red debug overlays to `dynamic_mask_debug/`.
+同时会在 `dynamic_mask_debug/` 写出红色 overlay 方便检查。
 
-### 3. COLMAP Mask Merge
+### 3. COLMAP mask 合并
 
-`colmap_masks/` are the masks passed to feature extraction.
+`colmap_masks/` 是最终传给 feature extraction 的 mask。
 
-The mask merge step uses dynamic masks when present. With
-`PANO3DGS_MASK_HEURISTICS=auto`, heuristics are used only for frames that do not
-have a dynamic SAM3 mask. If heuristics are forced on, they can also mask bright
-sky-like top regions plus fixed zenith and nadir bands.
+mask 合并步骤会优先使用已有 dynamic masks。在 `PANO3DGS_MASK_HEURISTICS=auto` 时，只有缺少 dynamic SAM3 mask 的帧才会使用启发式 mask。如果强制开启 heuristics，则还可以 mask 掉类似明亮天空的顶部区域，以及固定比例的 zenith / nadir 区域。
 
-The current default is conservative: prefer SAM3 masks, and avoid adding
-heuristic masks unless needed. This keeps more image content available for SfM.
+当前默认策略是保守的：优先使用 SAM3 mask，除非需要 fallback，否则不额外叠加启发式 mask。这样可以保留更多图像内容给 SfM 使用。
 
 ### 4. Perspective Panorama SfM
 
-`panorama-sfm` renders each equirectangular frame into a virtual perspective
-camera rig, then runs PyCOLMAP on the perspective images.
+`panorama-sfm` 会把每一张 equirectangular 全景帧渲染成一个虚拟 perspective 相机 rig，然后在这些 perspective 图像上运行 PyCOLMAP。
 
-The recommended render type is:
+推荐 render type 是：
 
 ```text
 perspective_overlapping
 ```
 
-This renders 12 virtual cameras per panorama:
+它会为每张 panorama 渲染 12 个虚拟相机：
 
 ```text
 4 yaw steps x 3 pitch angles = 12 views
 ```
 
-Each virtual camera has a 90 degree horizontal and vertical field of view.
-The recommended camera model is:
+每个虚拟相机的水平和垂直视场角都是 90 度。推荐相机模型是：
 
 ```text
 PINHOLE
 ```
 
-`PINHOLE` is preferred over `SIMPLE_PINHOLE` for the current Caspar build,
-because this COLMAP/Caspar combination does not support `SIMPLE_PINHOLE` in the
-Caspar bundle-adjustment path.
+当前 Caspar build 下优先使用 `PINHOLE`，而不是 `SIMPLE_PINHOLE`。原因是这套 COLMAP/Caspar 组合在 Caspar bundle-adjustment 路径里不支持 `SIMPLE_PINHOLE`。
 
-Input panorama masks from `colmap_masks/` are projected into the virtual views
-and intersected with the virtual camera masks generated by the panorama renderer.
+来自 `colmap_masks/` 的全景输入 mask 会被投影到虚拟视图，并和 panorama renderer 生成的每个虚拟相机 mask 做交集。
 
-Feature extraction uses PyCOLMAP with:
+Feature extraction 使用 PyCOLMAP，关键设置包括：
 
-- CUDA required by default.
-- SIFT `max_num_features` from `--max-features`.
-- `CameraMode.PER_FOLDER`, so each virtual camera folder maps to its own camera.
-- Rig configuration applied after feature extraction.
+- 默认要求 CUDA。
+- SIFT `max_num_features` 来自 `--max-features`。
+- 使用 `CameraMode.PER_FOLDER`，因此每个虚拟相机文件夹对应一个 camera。
+- feature extraction 后再应用 rig configuration。
 
-Matching defaults to sequential matching:
+Matching 默认使用 sequential matching：
 
 - `--panorama-matcher sequential`
 - `--overlap 25`
@@ -210,51 +169,41 @@ Matching defaults to sequential matching:
 - `rig_verification = True`
 - `skip_image_pairs_in_same_frame = True`
 
-Loop detection is off by default to avoid PyCOLMAP/COLMAP trying to download a
-vocabulary tree at runtime. If loop detection is needed, provide a local
-vocabulary tree with `--panorama-vocab-tree-path`.
+默认关闭 loop detection，避免 PyCOLMAP/COLMAP 在运行时尝试下载 vocabulary tree。如果需要 loop detection，应提前准备本地 vocabulary tree，并通过 `--panorama-vocab-tree-path` 显式传入。
 
-### 5. Mapper and Bundle Adjustment
+### 5. Mapper 和 Bundle Adjustment
 
-The recommended mapper/backend pair is:
+推荐 mapper/backend 组合是：
 
 ```text
 --panorama-mapper incremental
 --panorama-ba-backend caspar
 ```
 
-Caspar is used only with the incremental mapper. The global mapper path falls
-back to standard Ceres bundle adjustment.
+Caspar 只用于 incremental mapper。global mapper 路径使用标准 Ceres bundle adjustment。
 
-The incremental mapping options intentionally keep the rig and camera intrinsics
-fixed:
+incremental mapping 会有意固定 rig 和 camera intrinsics：
 
 - `ba_refine_sensor_from_rig = False`
 - `ba_refine_focal_length = False`
 - `ba_refine_principal_point = False`
 - `ba_refine_extra_params = False`
 
-This matches the construction of the virtual panorama rig: every virtual camera
-has known intrinsics and known relative pose inside the rig. The unknown is the
-pose of each source panorama frame in the world.
+这和虚拟 panorama rig 的构造一致：每个虚拟相机的内参和 rig 内相对位姿都是已知的，需要估计的是每个源 panorama frame 在世界坐标系里的 pose。
 
-Caspar requires the local COLMAP/PyCOLMAP build to expose and support Caspar.
-The public wheel can expose enum names without being compiled with real Caspar
-support, so the CLI checks this early and reports a clear error.
+Caspar 依赖本地 COLMAP/PyCOLMAP build 真实开启并支持 Caspar。公共 wheel 可能暴露 enum 名称，但实际并未用 Caspar 编译，所以 CLI 会尽早检查并给出明确错误。
 
-## Tool and Backend Choices
+## 工具和 Backend 选择
 
 ### `uv`
 
-`uv` manages the Python environment and runs the CLI. It keeps the project
-reproducible while still allowing local machine-specific packages, such as the
-prebuilt PyCOLMAP wheel, to be installed into the environment.
+`uv` 负责 Python 环境管理和 CLI 运行。它让项目依赖更可复现，同时仍允许把本机相关的包安装进环境，例如本地预编译 PyCOLMAP wheel。
 
-### Official SAM3 Submodule
+### 官方 SAM3 Submodule
 
-SAM3 is vendored as `third_party/sam3` and referenced as a local dependency.
-This is more reliable than importing from `/tmp` or another ad hoc checkout.
-Fresh clones should run:
+SAM3 以 `third_party/sam3` 形式 vendored 到项目中，并作为本地 dependency 引用。这比 import `/tmp` 或其他临时 checkout 更稳定。
+
+fresh clone 后应运行：
 
 ```bash
 git submodule update --init --recursive
@@ -263,43 +212,38 @@ uv sync
 
 ### CUDA Torch
 
-Torch and torchvision are pinned to CUDA-compatible versions for the Linux x86_64
-environment:
+Torch 和 torchvision 在 Linux x86_64 环境下固定为 CUDA 兼容版本：
 
 ```text
 torch==2.10.0
 torchvision==0.25.0
 ```
 
-The working environment also needs matching NVIDIA runtime packages, including
-cuDNN 9, so that `import torch` can find libraries such as `libcudnn.so.9`.
+运行环境还需要匹配的 NVIDIA runtime packages，包括 cuDNN 9，否则 `import torch` 可能找不到 `libcudnn.so.9` 等库。
 
 ### COLMAP CLI
 
-The COLMAP binary defaults to:
+COLMAP binary 默认路径是：
 
 ```text
 /home/invs/repos/colmap_prebuild/bin/colmap
 ```
 
-This is still used for legacy commands and for converting sparse binary models
-to text after `panorama-sfm`.
+它仍用于 legacy commands，也用于在 `panorama-sfm` 后把 sparse binary model 转成 text。
 
 ### PyCOLMAP
 
-`panorama-sfm` requires CUDA-enabled PyCOLMAP. In this environment, the intended
-wheel comes from the local COLMAP prebuild:
+`panorama-sfm` 要求 CUDA-enabled PyCOLMAP。在当前环境中，预期 wheel 来自本地 COLMAP prebuild：
 
 ```text
 /home/invs/repos/colmap_prebuild/pycolmap-4.1.0+cu128.bundled.cudss-cp311-cp311-manylinux_2_35_x86_64.whl
 ```
 
-PyCOLMAP is intentionally not pinned in `pyproject.toml`, because the correct
-wheel is machine- and CUDA-build-specific.
+PyCOLMAP 有意没有固定在 `pyproject.toml` 中，因为正确的 wheel 和具体机器、CUDA build 绑定。
 
-## Legacy Path
+## Legacy 路径
 
-The older commands remain available:
+旧命令仍然保留：
 
 ```bash
 uv run pano-3dgs colmap --run "$RUN"
@@ -307,25 +251,19 @@ uv run pano-3dgs cubemap --run "$RUN"
 uv run pano-3dgs run --video "$VIDEO"
 ```
 
-This path runs equirectangular COLMAP first and then converts to a cubemap
-dataset. It is useful for compatibility and experiments, but it is no longer the
-recommended route for the current Caspar + standard 3DGS workflow.
+这条路径先运行 equirectangular COLMAP，再转换成 cubemap dataset。它对兼容性和实验仍有用，但不再是当前 Caspar + 标准 3DGS 工作流的推荐路线。
 
-## Known Limitations
+## 已知限制
 
-- Frame extraction is not yet geometry-aware. It may keep frames that are too
-  close together or miss coverage during fast motion.
-- SAM3 masks depend on prompt quality. Over-broad prompts can remove stable
-  structure; under-broad prompts can leave dynamic objects for SfM.
-- `panorama-sfm` assumes true 360 panoramas with width equal to twice height.
-- Caspar support depends on the actual local COLMAP/PyCOLMAP build, not only on
-  Python enum availability.
-- A plain `uv sync` can remove machine-specific PyCOLMAP if it was installed
-  manually, because PyCOLMAP is not a project dependency.
+- Frame extraction 还不是 geometry-aware。它可能保留过近的帧，也可能在快速移动时漏掉覆盖。
+- SAM3 mask 依赖 prompt 质量。过宽 prompt 可能移除稳定结构；过窄 prompt 可能把动态物体留给 SfM。
+- `panorama-sfm` 假设输入是真 360 panorama，且宽度等于高度的两倍。
+- Caspar 支持取决于本地 COLMAP/PyCOLMAP build，而不只是 Python enum 是否存在。
+- 直接运行 `uv sync` 可能移除手动安装的、机器相关的 PyCOLMAP，因为 PyCOLMAP 没有作为项目 dependency 固定。
 
-## Current Recommendation
+## 当前建议
 
-For production-style reconstruction tests, use:
+用于较正式的 reconstruction 测试时，建议使用：
 
 ```text
 extract 2 Hz sharp frames
@@ -338,6 +276,4 @@ extract 2 Hz sharp frames
 -> Caspar BA backend when available
 ```
 
-This gives the current best alignment with common 3DGS importers while keeping
-the camera model and bundle-adjustment backend compatible with the local
-COLMAP/Caspar build.
+这条路线目前最符合常见 3DGS importer 的输入预期，同时保持 camera model 和 bundle-adjustment backend 与本地 COLMAP/Caspar build 兼容。
