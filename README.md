@@ -17,6 +17,9 @@ The older equirectangular-COLMAP-to-cubemap path is still available through
 `colmap` and `cubemap`, but the recommended workflow for Caspar and common 3DGS
 tools is `panorama-sfm` with perspective virtual `PINHOLE` cameras.
 
+See [docs/workflow_summary.md](docs/workflow_summary.md) for the current
+workflow, backend choices, output layout, and known limitations.
+
 ## Setup
 
 Use `uv` from this project directory:
