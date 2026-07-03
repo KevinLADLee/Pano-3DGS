@@ -4,6 +4,7 @@ import argparse
 import csv
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,7 @@ from PIL import Image
 
 
 DEFAULT_COLMAP = "/home/invs/repos/colmap_prebuild/bin/colmap"
+DEFAULT_SAM3_REPO = Path(__file__).resolve().parents[2] / "third_party" / "sam3"
 DEFAULT_FACES = ["front", "right", "back", "left", "top", "bottom"]
 
 FACE_AXES = {
@@ -143,6 +145,11 @@ def parse_faces(value: str) -> list[str]:
 
 def parse_list(value: str) -> list[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def default_scene_name(video: Path) -> str:
+    scene = re.sub(r"[^A-Za-z0-9_.-]+", "_", video.stem).strip("_.-")
+    return scene or "scene"
 
 
 def scene_run_dir(runs_dir: Path, scene: str, rate_hz: float, width: int) -> Path:
@@ -325,6 +332,8 @@ def run_sam3(args: argparse.Namespace) -> None:
         write_debug_overlay(path, keep, debug / path.name)
         ignored = 1.0 - float((keep > 0).mean())
         print(f"[{idx}/{len(image_paths)}] {path.name}: ignored={ignored:.4f}", flush=True)
+    if getattr(args, "sam3_colmap_masks", False):
+        make_colmap_masks(args)
 
 
 def build_sam3_keep_mask(
@@ -856,6 +865,8 @@ def run_panorama_sfm_workflow(args: argparse.Namespace) -> None:
 
 
 def run_all(args: argparse.Namespace) -> None:
+    if args.scene is None:
+        args.scene = default_scene_name(args.video)
     args.run = scene_run_dir(args.runs_dir, args.scene, args.rate_hz, args.equirect_width)
     extract_args = argparse.Namespace(**vars(args))
     extract_args.window_seconds = 1.0 / args.rate_hz
@@ -919,7 +930,7 @@ def add_mask_options(parser: argparse.ArgumentParser) -> None:
 
 def add_sam3_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--sam3-model", type=Path, default=env_path("PANO3DGS_SAM3_MODEL"))
-    parser.add_argument("--sam3-repo", type=Path, default=env_path("PANO3DGS_SAM3_REPO", "/tmp/sam3-official"))
+    parser.add_argument("--sam3-repo", type=Path, default=env_path("PANO3DGS_SAM3_REPO", DEFAULT_SAM3_REPO))
     parser.add_argument("--device", default=env_str("PANO3DGS_DEVICE", "cuda:0"))
     parser.add_argument("--dtype", choices=["auto", "float32", "float16", "bfloat16"], default=env_str("PANO3DGS_DTYPE", "bfloat16"))
     parser.add_argument("--prompt", action="append")
@@ -1021,7 +1032,15 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("sam3")
     add_common_run(p)
     add_sam3_options(p)
-    p.set_defaults(func=run_sam3)
+    add_mask_options(p)
+    p.add_argument(
+        "--colmap-masks",
+        dest="sam3_colmap_masks",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="also write merged COLMAP masks after SAM3 dynamic masks",
+    )
+    p.set_defaults(func=run_sam3, sam3_colmap_masks=True)
 
     p = sub.add_parser("masks")
     add_common_run(p)
@@ -1047,7 +1066,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("run")
     p.add_argument("--video", type=Path, required=True)
-    p.add_argument("--scene", required=True)
+    p.add_argument("--scene")
     p.add_argument("--runs-dir", type=Path, default=env_path("PANO3DGS_RUNS_DIR", "runs"))
     p.add_argument("--rate-hz", type=float, default=env_float("PANO3DGS_RATE_HZ", 2.0))
     add_extract_options_no_video(p)

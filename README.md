@@ -39,7 +39,7 @@ PANO3DGS_COLMAP=/home/invs/repos/colmap_prebuild/bin/colmap
 PANO3DGS_RUNS_DIR=runs
 PANO3DGS_GPU_INDEX=0
 PANO3DGS_SAM3_MODEL=/home/invs/research/ava360_3dgs/models/facebook_sam3
-PANO3DGS_SAM3_REPO=/tmp/sam3-official
+PANO3DGS_SAM3_REPO=third_party/sam3
 PANO3DGS_DEVICE=cuda:0
 PANO3DGS_SAM3_PROMPTS=person,people,camera,tripod,selfie stick,phone
 PANO3DGS_SKIP_SAM3=false
@@ -54,11 +54,11 @@ PANO3DGS_CUBEMAP_WORKERS=0
 The CLI automatically loads the nearest `.env` from the current directory or a
 parent directory. Command-line flags override `.env` values.
 
-Optional SAM3 runtime needs the official SAM3 checkout at the path referenced by
-`pyproject.toml`. Dependencies are installed by `uv sync`:
+Optional SAM3 runtime uses the official SAM3 checkout vendored as a git
+submodule. Initialize submodules before syncing dependencies:
 
 ```bash
-git clone https://github.com/facebookresearch/sam3.git /tmp/sam3-official
+git submodule update --init --recursive
 uv sync
 ```
 
@@ -121,16 +121,17 @@ From video to final cubemap dataset, with SAM3 enabled by default from `.env`:
 
 ```bash
 uv run pano-3dgs run \
-  --video /path/to/video.mp4 \
-  --scene xianjin_cofe
+  --video /path/to/video.mp4
 ```
+
+By default, the run directory is named from the video filename stem, for example
+`/path/to/xianjin_cofe.mp4` writes to `runs/xianjin_cofe_2hz_7680`.
 
 If SAM3 dynamic masks already exist, reuse them:
 
 ```bash
 uv run pano-3dgs run \
   --video /path/to/video.mp4 \
-  --scene xianjin_cofe \
   --dynamic-mask-dir /path/to/dynamic_masks
 ```
 
@@ -139,7 +140,6 @@ If you intentionally want to skip SAM3:
 ```bash
 uv run pano-3dgs run \
   --video /path/to/video.mp4 \
-  --scene xianjin_cofe \
   --skip-sam3
 ```
 
@@ -148,7 +148,7 @@ You can still override any `.env` default:
 ```bash
 uv run pano-3dgs run \
   --video /path/to/video.mp4 \
-  --scene xianjin_cofe \
+  --scene custom_scene_name \
   --rate-hz 3 \
   --face-size 1536 \
   --gpu-index 1
@@ -319,9 +319,6 @@ uv run pano-3dgs extract \
   --window-seconds 0.5
 
 uv run pano-3dgs sam3 \
-  --run "$RUN"
-
-uv run pano-3dgs masks \
   --run "$RUN"
 
 uv run pano-3dgs panorama-sfm \

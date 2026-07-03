@@ -11,10 +11,14 @@ dependencies = [
   "pillow",
   "psutil",
   "pycocotools",
-  "sam3 @ file:///tmp/sam3-official",
+  "sam3",
+  "setuptools<81",
   "torch==2.10.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "torchvision==0.25.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
+
+[tool.uv.sources]
+sam3 = { path = "third_party/sam3" }
 
 [project.scripts]
 pano-3dgs = "pano_3dgs.cli:main"

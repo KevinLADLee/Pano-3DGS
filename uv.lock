@@ -614,6 +614,7 @@ dependencies = [
     { name = "psutil" },
     { name = "pycocotools" },
     { name = "sam3" },
+    { name = "setuptools" },
     { name = "torch", version = "2.10.0", source = { registry = "https://mirrors.ustc.edu.cn/pypi/simple" }, marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "torchvision", version = "0.25.0", source = { registry = "https://mirrors.ustc.edu.cn/pypi/simple" }, marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
@@ -626,7 +627,8 @@ requires-dist = [
     { name = "pillow" },
     { name = "psutil" },
     { name = "pycocotools" },
-    { name = "sam3", directory = "../../../../tmp/sam3-official" },
+    { name = "sam3", directory = "third_party/sam3" },
+    { name = "setuptools", specifier = "<81" },
     { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", specifier = "==2.10.0" },
     { name = "torchvision", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", specifier = "==0.25.0" },
 ]
@@ -1069,7 +1071,7 @@ wheels = [
 
 [[package]]
 name = "sam3"
-source = { directory = "../../../../tmp/sam3-official" }
+source = { directory = "third_party/sam3" }
 dependencies = [
     { name = "ftfy" },
     { name = "huggingface-hub" },
@@ -1131,11 +1133,11 @@ provides-extras = ["dev", "notebooks", "train"]
 
 [[package]]
 name = "setuptools"
-version = "81.0.0"
+version = "80.10.2"
 source = { registry = "https://mirrors.ustc.edu.cn/pypi/simple" }
-sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/0d/1c/73e719955c59b8e424d015ab450f51c0af856ae46ea2da83eba51cc88de1/setuptools-81.0.0.tar.gz", hash = "sha256:487b53915f52501f0a79ccfd0c02c165ffe06631443a886740b91af4b7a5845a", size = 1198299, upload-time = "2026-02-06T21:10:39.601Z" }
+sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/76/95/faf61eb8363f26aa7e1d762267a8d602a1b26d4f3a1e758e92cb3cb8b054/setuptools-80.10.2.tar.gz", hash = "sha256:8b0e9d10c784bf7d262c4e5ec5d4ec94127ce206e8738f29a437945fbc219b70", size = 1200343, upload-time = "2026-01-25T22:38:17.252Z" }
 wheels = [
-    { url = "https://mirrors.ustc.edu.cn/pypi/packages/e1/e3/c164c88b2e5ce7b24d667b9bd83589cf4f3520d97cad01534cd3c4f55fdb/setuptools-81.0.0-py3-none-any.whl", hash = "sha256:fdd925d5c5d9f62e4b74b30d6dd7828ce236fd6ed998a08d81de62ce5a6310d6", size = 1062021, upload-time = "2026-02-06T21:10:37.175Z" },
+    { url = "https://mirrors.ustc.edu.cn/pypi/packages/94/b8/f1f62a5e3c0ad2ff1d189590bfa4c46b4f3b6e49cef6f26c6ee4e575394d/setuptools-80.10.2-py3-none-any.whl", hash = "sha256:95b30ddfb717250edb492926c92b5221f7ef3fbcc2b07579bcd4a27da21d0173", size = 1064234, upload-time = "2026-01-25T22:38:15.216Z" },
 ]
 
 [[package]]
