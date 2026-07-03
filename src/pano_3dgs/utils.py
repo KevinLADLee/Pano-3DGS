@@ -1,12 +1,33 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import shutil
+import sys
 from pathlib import Path
 
 
 def ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
+
+
+def link_or_copy_file(source: Path, destination: Path) -> str:
+    ensure_dir(destination.parent)
+    try:
+        if source.resolve() == destination.resolve():
+            return "existing"
+    except OSError:
+        pass
+    if sys.platform == "win32":
+        shutil.copy2(source, destination)
+        return "copied"
+    try:
+        os.link(source, destination)
+        return "linked"
+    except OSError:
+        shutil.copy2(source, destination)
+        return "copied"
 
 
 def parse_box(value: str) -> tuple[float, float, float, float]:

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import argparse
-import os
 
 from pano_3dgs.extract import extract_sharpest
 from pano_3dgs.panorama_sfm import run_panorama_sfm
 from pano_3dgs.sam3_masks import make_colmap_masks, run_sam3
-from pano_3dgs.utils import default_scene_name, ensure_dir, scene_run_dir
+from pano_3dgs.utils import default_scene_name, ensure_dir, link_or_copy_file, scene_run_dir
 
 
 def run_panorama_sfm_workflow(args: argparse.Namespace) -> None:
@@ -28,7 +27,7 @@ def run_all(args: argparse.Namespace) -> None:
         for path in sorted(args.dynamic_mask_dir.glob("*.png")):
             dst = target / path.name
             if not dst.exists():
-                os.link(path, dst)
+                link_or_copy_file(path, dst)
     elif args.skip_sam3:
         print("SAM3 skipped by --skip-sam3", flush=True)
     elif args.sam3_model:

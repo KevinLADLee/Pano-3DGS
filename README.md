@@ -39,17 +39,19 @@ summary, backend choices, output layout, and limitations.
 
 ## Requirements
 
-- Linux with Python 3.10+.
+- Linux or Windows with Python 3.10+.
 - `uv` for dependency and CLI execution.
 - CUDA-capable PyCOLMAP for the recommended workflow.
 - NVIDIA runtime packages compatible with the installed Torch / PyCOLMAP wheels.
 - Optional but recommended: SAM3 weights for dynamic object masking.
 
-Torch is pinned for SAM3 on Linux x86_64:
+Torch is pinned for SAM3 on Linux x86_64 and Windows, using the PyTorch cu128
+wheel index by default:
 
 ```text
 torch==2.10.0
 torchvision==0.25.0
+index = https://download.pytorch.org/whl/cu128
 ```
 
 ## Quick Start
@@ -61,12 +63,44 @@ uv sync
 cp pano3dgs.example.toml pano3dgs.toml
 ```
 
-Install a PyCOLMAP wheel that matches your Python version, platform, and CUDA
-runtime. The [COLMAP Build v4.1.0 release](https://github.com/lyehe/build_gpu_colmap/releases/tag/v4.1.0)
-provides COLMAP 4.1.0 archives and matching `pycolmap` wheels:
+On Windows PowerShell:
+
+```powershell
+cd D:\path\to\pano-3dgs
+git submodule update --init --recursive
+uv sync
+Copy-Item pano3dgs.example.toml pano3dgs.toml
+```
+
+`uv sync` installs a PyCOLMAP wheel that matches your Python version, platform,
+and CUDA runtime from the
+[COLMAP Build v4.1.0 release](https://github.com/lyehe/build_gpu_colmap/releases/tag/v4.1.0).
+On Windows this uses the `cuda.cudss` `win_amd64` wheel. On Linux x86_64 this
+uses the `cu128.bundled.cudss` `manylinux_2_35_x86_64` wheel.
+
+To inspect or reinstall the wheel selected for the current interpreter:
+
+```bash
+uv run pano-3dgs install-pycolmap
+```
+
+To only print the selected wheel URL:
+
+```bash
+uv run pano-3dgs install-pycolmap --print-only
+```
+
+The same release also provides COLMAP 4.1.0 archives and matching `pycolmap`
+wheels. You can still install a wheel manually:
 
 ```bash
 uv pip install /path/to/pycolmap-*.whl
+```
+
+On Windows:
+
+```powershell
+uv pip install C:\path\to\pycolmap-*.whl
 ```
 
 Download SAM3 weights. The official model page is
@@ -76,6 +110,12 @@ use:
 
 ```bash
 scripts/download_sam3_modelscope.sh
+```
+
+On Windows:
+
+```powershell
+.\scripts\download_sam3_modelscope.ps1
 ```
 
 The script downloads to the default local weight directory:
@@ -119,6 +159,7 @@ virtual_camera_model = "pinhole"
 matcher = "sequential"
 mapper = "incremental"
 ba_backend = "caspar"
+workers = 0  # auto: 1 on Windows, up to 32 on Linux
 ```
 
 Use `--config path/to/file.toml` to select a specific config file.
@@ -296,6 +337,12 @@ If `uv` cannot write to its cache directory in a restricted environment:
 
 ```bash
 export UV_CACHE_DIR=/tmp/uv-cache
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:UV_CACHE_DIR = "$env:TEMP\uv-cache"
 ```
 
 If `import torch` fails with `libcudnn.so.9`, install NVIDIA runtime packages

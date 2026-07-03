@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pano_3dgs.config import Settings, find_cli_config, load_settings
 from pano_3dgs.extract import extract_sharpest
+from pano_3dgs.pycolmap_release import DEFAULT_RELEASE_API_URL, DEFAULT_RELEASE_DOWNLOAD_BASE, DEFAULT_PYCOLMAP_VERSION, install_pycolmap
 from pano_3dgs.sam3_masks import make_colmap_masks, run_sam3
 from pano_3dgs.utils import parse_box, parse_list
 from pano_3dgs.workflow import run_all, run_panorama_sfm_workflow
@@ -179,6 +180,35 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     add_sfm_options(p, settings)
     add_panorama_sfm_options(p, settings)
     p.set_defaults(func=run_panorama_sfm_workflow)
+
+    p = sub.add_parser("install-pycolmap")
+    add_config_option(p)
+    p.add_argument("--release-api-url", default=DEFAULT_RELEASE_API_URL)
+    p.add_argument("--release-download-base", default=DEFAULT_RELEASE_DOWNLOAD_BASE)
+    p.add_argument("--pycolmap-version", default=DEFAULT_PYCOLMAP_VERSION)
+    p.add_argument(
+        "--variant",
+        choices=[
+            "auto",
+            "cpu",
+            "cuda",
+            "cuda.cudss",
+            "cu128.bundled",
+            "cu128.bundled.cudss",
+            "cu130.bundled",
+            "cu130.bundled.cudss",
+            "cu131.bundled",
+            "cu131.bundled.cudss",
+        ],
+        default="auto",
+        help="PyCOLMAP wheel variant. auto selects cuda.cudss on Windows and cu128.bundled.cudss on Linux.",
+    )
+    p.add_argument("--python-tag", help="override Python ABI tag, e.g. cp312")
+    p.add_argument("--platform-tag", help="override wheel platform tag, e.g. win_amd64")
+    p.add_argument("--installer", choices=["uv", "pip"], default="uv")
+    p.add_argument("--print-only", action="store_true", help="print the selected wheel URL without installing")
+    p.add_argument("--check-release-assets", action="store_true", help="query GitHub release assets before installing")
+    p.set_defaults(func=install_pycolmap)
 
     p = sub.add_parser("run")
     add_config_option(p)

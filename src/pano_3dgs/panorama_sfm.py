@@ -43,24 +43,53 @@ PANO_RENDER_OPTIONS: dict[str, PanoRenderOptions] = {
 }
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"}
+_DLL_DIRECTORY_HANDLES = []
+
+
+def add_windows_pycolmap_dll_dirs(pycolmap_path: Path | None = None) -> None:
+    if sys.platform != "win32" or not hasattr(os, "add_dll_directory"):
+        return
+
+    roots = []
+    if pycolmap_path:
+        roots.append(Path(pycolmap_path))
+    roots.extend(Path(path) for path in sys.path if path)
+
+    seen = set()
+    for root in roots:
+        candidates = [
+            root / "pycolmap.libs",
+            root.parent / "pycolmap.libs",
+        ]
+        for libs_dir in candidates:
+            try:
+                resolved = libs_dir.resolve()
+            except OSError:
+                continue
+            if resolved in seen or not resolved.is_dir():
+                continue
+            seen.add(resolved)
+            _DLL_DIRECTORY_HANDLES.append(os.add_dll_directory(str(resolved)))
 
 
 def import_pycolmap(pycolmap_path: Path | None = None, require_cuda: bool = True):
     if pycolmap_path:
         sys.path.insert(0, str(pycolmap_path))
+    add_windows_pycolmap_dll_dirs(pycolmap_path)
     try:
         import pycolmap
     except ImportError as exc:
         raise SystemExit(
-            "Official panorama SfM workflow requires CUDA-enabled PyCOLMAP. "
-            "Install the CUDA 12 wheel with `uv sync` / `uv pip install pycolmap-cuda12`, "
-            "or build PyCOLMAP from your CUDA COLMAP source and install its wheel."
+            "PyCOLMAP is required for the panorama SfM workflow. Install a wheel "
+            "that matches your Python version, OS, and CUDA/runtime choice, for example "
+            "`uv pip install /path/to/pycolmap-*.whl`."
         ) from exc
     if require_cuda:
         if not getattr(pycolmap, "has_cuda", False):
             raise SystemExit(
                 "Imported PyCOLMAP does not report CUDA support. "
-                "Use `pycolmap-cuda12` on Linux/CUDA 12, or build PyCOLMAP from the CUDA-enabled COLMAP source."
+                "Install a CUDA-enabled PyCOLMAP wheel for your platform, build PyCOLMAP "
+                "from CUDA-enabled COLMAP sources, or rerun with `--no-require-pycolmap-cuda`."
             )
         if hasattr(pycolmap, "get_num_cuda_devices") and pycolmap.get_num_cuda_devices() < 1:
             raise SystemExit("PyCOLMAP has CUDA support, but no CUDA device is currently visible.")
@@ -429,7 +458,8 @@ def render_perspective_images(
         camera_model,
         rerender,
     )
-    workers = max_workers if max_workers > 0 else min(32, max(1, (os.cpu_count() or 2) - 1))
+    default_workers = 1 if sys.platform == "win32" else min(32, max(1, (os.cpu_count() or 2) - 1))
+    workers = max_workers if max_workers > 0 else default_workers
     workers = max(1, min(workers, len(pano_image_names) or 1))
     print(f"rendering {len(pano_image_names)} panoramas with {workers} workers", flush=True)
     done = 0

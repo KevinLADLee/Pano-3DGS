@@ -13,6 +13,12 @@ from pano_3dgs.defaults import DEFAULT_SAM3_REPO, DYNAMIC_PROMPTS
 from pano_3dgs.utils import ensure_dir
 
 
+def resolve_torch_device(torch, requested: str) -> str:
+    if requested != "auto":
+        return requested
+    return "cuda:0" if torch.cuda.is_available() else "cpu"
+
+
 def load_official_sam3(args: argparse.Namespace):
     import torch
 
@@ -47,7 +53,7 @@ def load_official_sam3(args: argparse.Namespace):
     if not checkpoint.exists():
         raise SystemExit(f"SAM3 checkpoint not found: {checkpoint}")
 
-    device = args.device
+    device = resolve_torch_device(torch, args.device)
     builder_device = "cuda" if device.startswith("cuda") else device
     if device.startswith("cuda:"):
         torch.cuda.set_device(int(device.split(":", 1)[1]))
