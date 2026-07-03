@@ -43,6 +43,21 @@ git submodule update --init --recursive
 uv sync
 ```
 
+SAM3 model weights are hosted at
+<https://huggingface.co/facebook/sam3>. Access may require accepting the model
+terms on Hugging Face. A ModelScope mirror is available at
+<https://www.modelscope.cn/models/facebook/sam3/summary>; download it with:
+
+```bash
+scripts/download_sam3_modelscope.sh
+```
+
+The script runs:
+
+```bash
+modelscope download --model facebook/sam3
+```
+
 ### PyCOLMAP
 
 The recommended panorama workflow uses PyCOLMAP directly. For Caspar, install a

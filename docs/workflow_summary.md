@@ -138,6 +138,30 @@ sam3 = { path = "third_party/sam3" }
 
 SAM3 从 TOML 的 `[sam3].model` 或 `--sam3-model` 加载 checkpoint。预期的本地模型目录可以包含 `sam3.pt`。
 
+官方 Hugging Face 模型页是：
+
+```text
+https://huggingface.co/facebook/sam3
+```
+
+如果需要从 ModelScope 下载，可以使用项目脚本：
+
+```bash
+scripts/download_sam3_modelscope.sh
+```
+
+脚本执行的命令是：
+
+```bash
+modelscope download --model facebook/sam3
+```
+
+ModelScope 页面：
+
+```text
+https://www.modelscope.cn/models/facebook/sam3/summary
+```
+
 默认动态 prompts 针对不应参与稳定三维结构的对象，例如人、相机设备、三脚架、自拍杆和手机。本地 TOML 可以扩展这些 prompts。例如加入 `sky` 可以在天空产生不稳定或不需要的特征时有所帮助，但如果 prompt 过度分割，也可能移除有用的远处背景约束。
 
 SAM3 写出的 mask 使用 COLMAP 约定：
@@ -238,6 +262,17 @@ fresh clone 后应运行：
 ```bash
 git submodule update --init --recursive
 uv sync
+```
+
+模型权重来源：
+
+- 官方 Hugging Face：`https://huggingface.co/facebook/sam3`
+- ModelScope：`https://www.modelscope.cn/models/facebook/sam3/summary`
+
+ModelScope 下载脚本：
+
+```bash
+scripts/download_sam3_modelscope.sh
 ```
 
 ### CUDA Torch
