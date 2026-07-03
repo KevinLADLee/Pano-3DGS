@@ -1,118 +1,146 @@
 # pano-3dgs
 
-`pano-3dgs` converts pre-stitched 360 equirectangular video into a standard
-PINHOLE COLMAP dataset suitable for common 3DGS tools such as LichtFeld Studio.
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](#)
+[![uv](https://img.shields.io/badge/package%20manager-uv-6f42c1)](#)
+[![PyCOLMAP](https://img.shields.io/badge/SfM-PyCOLMAP-2f6f6f)](#)
+[![SAM3](https://img.shields.io/badge/masks-SAM3-111827)](#)
 
-Pipeline:
+Convert pre-stitched 360 equirectangular videos into perspective `PINHOLE`
+COLMAP datasets for 3D Gaussian Splatting tools.
+
+**Tags:** `360-video` `equirectangular` `3dgs` `colmap` `pycolmap` `sam3`
+`caspar-ba` `panorama-sfm`
 
 ```text
-360 video
-  -> sharp equirectangular frames + SAM3 masks
-  -> COLMAP masks
+360 MP4
+  -> sharp panorama frames
+  -> SAM3 dynamic masks
   -> perspective PINHOLE panorama SfM
-  -> standard 3DGS / LichtFeld Studio
+  -> COLMAP dataset for 3DGS import
 ```
 
-See [docs/workflow_summary.md](docs/workflow_summary.md) for the current
-workflow, backend choices, output layout, and known limitations.
+The recommended path is fully PyCOLMAP-based. The older COLMAP binary workflow
+has been removed from the CLI.
 
-## Setup
+See [workflow_summary.md](docs/workflow_summary.md) for the Chinese workflow
+summary, backend choices, output layout, and limitations.
 
-Use `uv` from this project directory:
+## Features
+
+- Extracts sharp frames from 360 videos with fixed-rate temporal windows.
+- Uses official SAM3 from the `third_party/sam3` submodule for dynamic masks.
+- Renders each panorama frame into an overlapping perspective rig.
+- Runs PyCOLMAP feature extraction, matching, and mapping on `PINHOLE` cameras.
+- Supports Caspar bundle adjustment when the installed PyCOLMAP wheel exposes it.
+- Writes both binary and text COLMAP models.
+- Uses TOML config with CLI overrides.
+
+## Requirements
+
+- Linux with Python 3.10+.
+- `uv` for dependency and CLI execution.
+- CUDA-capable PyCOLMAP for the recommended workflow.
+- NVIDIA runtime packages compatible with the installed Torch / PyCOLMAP wheels.
+- Optional but recommended: SAM3 weights for dynamic object masking.
+
+Torch is pinned for SAM3 on Linux x86_64:
+
+```text
+torch==2.10.0
+torchvision==0.25.0
+```
+
+## Quick Start
 
 ```bash
 cd /path/to/pano-3dgs
+git submodule update --init --recursive
 uv sync
-```
-
-Create local defaults with TOML:
-
-```bash
 cp pano3dgs.example.toml pano3dgs.toml
 ```
 
-Edit `pano3dgs.toml` for your machine. The CLI automatically loads the nearest
-`pano3dgs.toml` or `pano-3dgs.toml`; you can also pass `--config path.toml`.
-Priority is: command-line flags, TOML config, built-in defaults.
-
-Optional SAM3 runtime uses the official SAM3 checkout vendored as a git
-submodule. `uv` installs it as an editable local dependency from
-`third_party/sam3`. Initialize submodules before syncing dependencies:
-
-```bash
-git submodule update --init --recursive
-uv sync
-```
-
-SAM3 weights are published on [Hugging Face](https://huggingface.co/facebook/sam3);
-access may require accepting the model terms. For
-[ModelScope](https://www.modelscope.cn/models/facebook/sam3/summary), use the
-project script below. It downloads `facebook/sam3` to the default local weights
-directory: `models/facebook/sam3`.
-
-```bash
-scripts/download_sam3_modelscope.sh
-```
-
-The script runs:
-
-```bash
-modelscope download --model facebook/sam3 --local_dir models/facebook/sam3
-```
-
-### PyCOLMAP
-
-The recommended panorama workflow uses PyCOLMAP directly. For Caspar, install a
-PyCOLMAP wheel compiled from the matching COLMAP/Caspar build. The
-[COLMAP Build v4.1.0 release](https://github.com/lyehe/build_gpu_colmap/releases/tag/v4.1.0)
-provides COLMAP 4.1.0 archives and matching `pycolmap` wheels. For this project,
-install the wheel that matches your Python version, platform, and CUDA/runtime
-variant:
-
-```text
-/path/to/pycolmap-*.whl
-```
-
-PyCOLMAP is intentionally not pinned in `pyproject.toml`, because the
-CUDA/Caspar wheel is machine-specific. Install it into this project's uv
-environment:
+Install a PyCOLMAP wheel that matches your Python version, platform, and CUDA
+runtime. The [COLMAP Build v4.1.0 release](https://github.com/lyehe/build_gpu_colmap/releases/tag/v4.1.0)
+provides COLMAP 4.1.0 archives and matching `pycolmap` wheels:
 
 ```bash
 uv pip install /path/to/pycolmap-*.whl
 ```
 
-Verify PyCOLMAP before running SfM:
+Download SAM3 weights. The official model page is
+[Hugging Face facebook/sam3](https://huggingface.co/facebook/sam3). For
+[ModelScope facebook/sam3](https://www.modelscope.cn/models/facebook/sam3/summary),
+use:
 
 ```bash
-uv run python - <<'PY'
-import pycolmap
-print(pycolmap.__version__, "cuda=", pycolmap.has_cuda)
-print("cuda devices=", pycolmap.get_num_cuda_devices())
-print("caspar=", hasattr(pycolmap, "CasparBundleAdjustmentOptions"))
-PY
+scripts/download_sam3_modelscope.sh
 ```
 
-Caspar currently works with the rendered `PINHOLE` virtual cameras used by
-`panorama-sfm`; do not switch it to `SIMPLE_PINHOLE` when using
-`--panorama-ba-backend caspar`.
+The script downloads to the default local weight directory:
+`models/facebook/sam3`.
 
-Torch is pinned to a CUDA 12 compatible pair (`torch==2.10.0`,
-`torchvision==0.25.0`) for SAM3.
+Run the full workflow:
 
-## One-Command Flow
+```bash
+uv run pano-3dgs run --video /path/to/video.mp4
+```
 
-From video to the final perspective `PINHOLE` panorama SfM dataset, with SAM3
-configured in `pano3dgs.toml`:
+By default, `/path/to/my_scene.mp4` writes to:
+
+```text
+runs/my_scene_2hz_7680/
+```
+
+## Configuration
+
+Edit `pano3dgs.toml` for local paths and defaults. The CLI automatically finds
+the nearest `pano3dgs.toml` or `pano-3dgs.toml`.
+
+Priority:
+
+```text
+CLI flags > TOML config > built-in defaults
+```
+
+Important defaults:
+
+```toml
+[sam3]
+model = "models/facebook/sam3"
+
+[pycolmap]
+require_cuda = true
+
+[panorama_sfm]
+render_type = "perspective_overlapping"
+virtual_camera_model = "pinhole"
+matcher = "sequential"
+mapper = "incremental"
+ba_backend = "caspar"
+```
+
+Use `--config path/to/file.toml` to select a specific config file.
+
+## Commands
+
+### One Command
 
 ```bash
 uv run pano-3dgs run \
   --video /path/to/video.mp4
 ```
 
-By default, the run directory is named from the video filename stem, for example
-`/path/to/xianjin_cofe.mp4` writes to `runs/xianjin_cofe_2hz_7680`.
+Useful overrides:
 
-If SAM3 dynamic masks already exist, reuse them:
+```bash
+uv run pano-3dgs run \
+  --video /path/to/video.mp4 \
+  --scene custom_scene \
+  --rate-hz 3 \
+  --gpu-index 1
+```
+
+Reuse existing dynamic masks:
 
 ```bash
 uv run pano-3dgs run \
@@ -120,7 +148,7 @@ uv run pano-3dgs run \
   --dynamic-mask-dir /path/to/dynamic_masks
 ```
 
-If you intentionally want to skip SAM3:
+Skip SAM3:
 
 ```bash
 uv run pano-3dgs run \
@@ -128,17 +156,52 @@ uv run pano-3dgs run \
   --skip-sam3
 ```
 
-You can still override TOML defaults for a single command:
+### Step by Step
 
 ```bash
-uv run pano-3dgs run \
-  --video /path/to/video.mp4 \
-  --scene custom_scene_name \
-  --rate-hz 3 \
-  --gpu-index 1
+VIDEO=/path/to/video.mp4
+RUN=runs/$(basename "$VIDEO" .mp4)_2hz_7680
 ```
 
-Default output:
+Extract sharp panorama frames:
+
+```bash
+uv run pano-3dgs extract \
+  --video "$VIDEO" \
+  --run "$RUN"
+```
+
+Run SAM3 and write merged COLMAP masks:
+
+```bash
+uv run pano-3dgs sam3 \
+  --run "$RUN"
+```
+
+Run perspective panorama SfM:
+
+```bash
+uv run pano-3dgs panorama-sfm \
+  --run "$RUN" \
+  --clean-panorama-sfm
+```
+
+With explicit Caspar settings:
+
+```bash
+uv run pano-3dgs panorama-sfm \
+  --run "$RUN" \
+  --clean-panorama-sfm \
+  --pano-render-type perspective_overlapping \
+  --panorama-virtual-camera-model pinhole \
+  --panorama-ba-backend caspar \
+  --panorama-mapper incremental \
+  --panorama-matcher sequential
+```
+
+## Output
+
+Default run layout:
 
 ```text
 runs/<scene>_2hz_7680/
@@ -156,165 +219,18 @@ runs/<scene>_2hz_7680/
     sparse_equirectangular_txt/0/
 ```
 
-## Step Commands
-
-Extract sharp frames:
-
-```bash
-uv run pano-3dgs extract \
-  --video videos/xianjin_cofe.mp4 \
-  --run runs/xianjin_cofe_2hz_7680
-```
-
-Run SAM3 dynamic masking:
-
-```bash
-uv run pano-3dgs sam3 \
-  --run runs/xianjin_cofe_2hz_7680
-```
-
-Build final COLMAP masks:
-
-```bash
-uv run pano-3dgs masks \
-  --run runs/xianjin_cofe_2hz_7680
-```
-
-By default this uses SAM3 masks when available and only falls back to heuristic
-sky / zenith / nadir masks when no SAM3 mask exists for a frame.
-
-Run the recommended perspective panorama SfM workflow:
-
-```bash
-uv run pano-3dgs panorama-sfm \
-  --run runs/xianjin_cofe_2hz_7680 \
-  --clean-panorama-sfm \
-  --pano-render-type perspective_overlapping \
-  --panorama-virtual-camera-model pinhole
-```
-
-To use Caspar GPU bundle adjustment through PyCOLMAP, keep the incremental
-mapper and the virtual camera model as `pinhole`:
-
-```bash
-uv run pano-3dgs panorama-sfm \
-  --run runs/xianjin_cofe_2hz_7680 \
-  --clean-panorama-sfm \
-  --pano-render-type perspective_overlapping \
-  --panorama-virtual-camera-model pinhole \
-  --panorama-ba-backend caspar \
-  --panorama-mapper incremental \
-  --panorama-matcher sequential
-```
-
-Caspar is only used for `--panorama-mapper incremental`. It supports this
-workflow because the rendered virtual cameras are `PINHOLE` and the rig sensor
-poses are fixed. The public `pycolmap-cuda12` wheel may expose the `CASPAR`
-enum while still being compiled without Caspar support; in that case the command
-will fail early and ask you to build PyCOLMAP from source with Caspar enabled.
-
-By default, sequential matching does not run vocabulary-tree loop detection.
-This avoids COLMAP/PyCOLMAP trying to download
-`vocab_tree_faiss_flickr100K_words256K.bin` at runtime. If loop detection is
-needed, download the vocabulary tree yourself and pass it explicitly:
-
-```bash
-uv run pano-3dgs panorama-sfm \
-  --run runs/xianjin_cofe_2hz_7680 \
-  --panorama-loop-detection \
-  --panorama-vocab-tree-path /path/to/vocab_tree_faiss_flickr100K_words256K.bin
-```
-
-This renders each equirectangular frame into the COLMAP example's default
-`perspective_overlapping` rig: 4 yaw steps x 3 pitch angles = 12 overlapping
-virtual PINHOLE cameras. `colmap_masks/` are projected into those views and
-intersected with COLMAP's per-virtual-camera masks. The 3DGS-friendly output is:
+Use these paths for standard 3DGS import:
 
 ```text
-runs/<scene>_2hz_7680/panorama_sfm/
-  images/
-  masks/
-  database.db
-  sparse/0/
-  sparse_txt/0/
-  sparse_equirectangular/0/
-  sparse_equirectangular_txt/0/
+panorama_sfm/images/
+panorama_sfm/sparse/0/
 ```
 
-Use `panorama_sfm/images` with `panorama_sfm/sparse/0` for PINHOLE 3DGS import.
-The `sparse_equirectangular` model maps the reconstruction back to the original
-panorama frames and is mainly useful for inspection or tools that support
-COLMAP's `EQUIRECTANGULAR` camera model.
+`sparse_equirectangular/0` maps the reconstruction back to the original panorama
+frames and is mainly for inspection or tools that support COLMAP's
+`EQUIRECTANGULAR` camera model.
 
-Existing perspective images and masks are reused by default. To force rendering
-again after changing masks or render settings, use:
-
-```bash
-uv run pano-3dgs panorama-sfm \
-  --run runs/xianjin_cofe_2hz_7680 \
-  --rerender-perspective
-```
-
-The feature/match database is also reused by default. This means you can switch
-mapper settings, for example trying Caspar, without re-rendering images or
-re-running feature extraction / matching:
-
-```bash
-uv run pano-3dgs panorama-sfm \
-  --run runs/xianjin_cofe_2hz_7680 \
-  --panorama-ba-backend caspar
-```
-
-Use `--rerun-panorama-features` or `--rerun-panorama-matching` when you change
-image, mask, feature, matching, or rig settings. `--clean-panorama-sfm` removes
-the whole panorama SfM workspace and recomputes everything.
-
-For a new video with the current perspective + Caspar + PINHOLE workflow, run
-the frame/mask steps first and then run `panorama-sfm`:
-
-```bash
-VIDEO=/path/to/video.mp4
-RUN=runs/$(basename "$VIDEO" .mp4)_2hz_7680
-
-uv run pano-3dgs extract \
-  --run "$RUN" \
-  --video "$VIDEO" \
-  --window-seconds 0.5
-
-uv run pano-3dgs sam3 \
-  --run "$RUN"
-
-uv run pano-3dgs panorama-sfm \
-  --run "$RUN" \
-  --clean-panorama-sfm \
-  --pano-render-type perspective_overlapping \
-  --panorama-virtual-camera-model pinhole \
-  --panorama-ba-backend caspar \
-  --panorama-mapper incremental \
-  --panorama-matcher sequential
-```
-
-With the recommended values in `pano3dgs.toml`, the final command can be:
-
-```bash
-uv run pano-3dgs panorama-sfm --run "$RUN" --clean-panorama-sfm
-```
-
-## Configuration
-
-The local configuration file is `pano3dgs.toml`. See
-[`pano3dgs.example.toml`](pano3dgs.example.toml) for all supported sections.
-The CLI automatically searches the current directory and parent directories for
-`pano3dgs.toml` or `pano-3dgs.toml`.
-
-Use `--config path/to/file.toml` to run with a specific config file. Command-line
-flags override TOML values for that invocation only.
-
-`[masks].heuristics = "auto"` means: use SAM3 / dynamic masks when present, and
-use heuristic masks only for frames without a dynamic mask. Set it to `true` to
-always merge heuristics, or `false` to never use heuristics.
-
-## Mask Convention
+## Masks
 
 All masks use COLMAP convention:
 
@@ -323,13 +239,65 @@ white = keep
 black = ignore
 ```
 
+`sam3` writes `dynamic_masks/` and, by default, also writes merged
+`colmap_masks/`. The fallback `masks` command is still available:
+
+```bash
+uv run pano-3dgs masks --run "$RUN"
+```
+
+`[masks].heuristics = "auto"` means: use SAM3 masks when present, and use
+heuristic sky / zenith / nadir masks only for frames without dynamic masks.
+
+## PyCOLMAP Notes
+
+Caspar only applies to the incremental mapper. Keep:
+
+```toml
+[panorama_sfm]
+mapper = "incremental"
+virtual_camera_model = "pinhole"
+```
+
+The public `pycolmap-cuda12` wheel may expose the `CASPAR` enum without being
+compiled with Caspar support. The CLI checks this early and exits with a clear
+error.
+
+Loop detection is off by default to avoid runtime vocabulary-tree downloads. If
+you need it:
+
+```bash
+uv run pano-3dgs panorama-sfm \
+  --run "$RUN" \
+  --panorama-loop-detection \
+  --panorama-vocab-tree-path /path/to/vocab_tree_faiss_flickr100K_words256K.bin
+```
+
+## Rebuild Controls
+
+Existing perspective images, masks, features, and matches are reused when
+possible.
+
+```bash
+uv run pano-3dgs panorama-sfm --run "$RUN" --rerender-perspective
+uv run pano-3dgs panorama-sfm --run "$RUN" --rerun-panorama-features
+uv run pano-3dgs panorama-sfm --run "$RUN" --rerun-panorama-matching
+uv run pano-3dgs panorama-sfm --run "$RUN" --clean-panorama-sfm
+```
+
+Use `--clean-panorama-sfm` after changing render settings, camera model, or
+major mask settings.
+
 ## Troubleshooting
 
-If `uv` reports that its cache directory is not writable in a restricted
-environment, set a writable cache directory for that shell only:
+If `uv` cannot write to its cache directory in a restricted environment:
 
 ```bash
 export UV_CACHE_DIR=/tmp/uv-cache
 ```
 
-This is not required on a normal user shell with a writable home directory.
+If `import torch` fails with `libcudnn.so.9`, install NVIDIA runtime packages
+matching the pinned Torch build.
+
+If PyCOLMAP reports no CUDA device, check driver visibility and whether the
+installed wheel is actually CUDA-enabled.
