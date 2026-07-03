@@ -44,9 +44,10 @@ git submodule update --init --recursive
 uv sync
 ```
 
-SAM3 weights are published at <https://huggingface.co/facebook/sam3>; Hugging
-Face may require accepting the model terms. For ModelScope, use the project
-script below. It downloads `facebook/sam3` to the default local weights
+SAM3 weights are published on [Hugging Face](https://huggingface.co/facebook/sam3);
+access may require accepting the model terms. For
+[ModelScope](https://www.modelscope.cn/models/facebook/sam3/summary), use the
+project script below. It downloads `facebook/sam3` to the default local weights
 directory: `models/facebook/sam3`.
 
 ```bash
@@ -62,15 +63,11 @@ modelscope download --model facebook/sam3 --local_dir models/facebook/sam3
 ### PyCOLMAP
 
 The recommended panorama workflow uses PyCOLMAP directly. For Caspar, install a
-PyCOLMAP wheel compiled from the matching COLMAP/Caspar build:
-
-```text
-https://github.com/lyehe/build_gpu_colmap/releases/tag/v4.1.0
-```
-
-This release provides COLMAP 4.1.0 archives and matching `pycolmap` wheels.
-For this project, install the wheel that matches your Python version, platform,
-and CUDA/runtime variant:
+PyCOLMAP wheel compiled from the matching COLMAP/Caspar build. The
+[COLMAP Build v4.1.0 release](https://github.com/lyehe/build_gpu_colmap/releases/tag/v4.1.0)
+provides COLMAP 4.1.0 archives and matching `pycolmap` wheels. For this project,
+install the wheel that matches your Python version, platform, and CUDA/runtime
+variant:
 
 ```text
 /path/to/pycolmap-*.whl

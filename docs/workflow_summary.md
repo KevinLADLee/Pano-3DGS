@@ -146,11 +146,7 @@ models/facebook/sam3
 
 `[sam3].model` 可以指向模型目录，也可以直接指向 `sam3.pt`。
 
-官方 Hugging Face 模型页是：
-
-```text
-https://huggingface.co/facebook/sam3
-```
+官方模型页是 [Hugging Face facebook/sam3](https://huggingface.co/facebook/sam3)。
 
 从 ModelScope 下载时使用项目脚本：
 
@@ -164,11 +160,7 @@ scripts/download_sam3_modelscope.sh
 modelscope download --model facebook/sam3 --local_dir models/facebook/sam3
 ```
 
-ModelScope 页面：
-
-```text
-https://www.modelscope.cn/models/facebook/sam3/summary
-```
+ModelScope 页面是 [facebook/sam3](https://www.modelscope.cn/models/facebook/sam3/summary)。
 
 默认动态 prompts 针对不应参与稳定三维结构的对象，例如人、相机设备、三脚架、自拍杆和手机。本地 TOML 可以扩展这些 prompts。例如加入 `sky` 可以在天空产生不稳定或不需要的特征时有所帮助，但如果 prompt 过度分割，也可能移除有用的远处背景约束。
 
@@ -274,8 +266,8 @@ uv sync
 
 模型权重来源：
 
-- 官方 Hugging Face：`https://huggingface.co/facebook/sam3`
-- ModelScope：`https://www.modelscope.cn/models/facebook/sam3/summary`
+- [官方 Hugging Face](https://huggingface.co/facebook/sam3)
+- [ModelScope facebook/sam3](https://www.modelscope.cn/models/facebook/sam3/summary)
 
 ModelScope 下载脚本：
 
@@ -298,11 +290,7 @@ torchvision==0.25.0
 
 ### PyCOLMAP
 
-推荐工作流依赖 PyCOLMAP，不依赖 COLMAP binary。`panorama-sfm` 要求 CUDA-enabled PyCOLMAP。COLMAP 4.1.0 prebuild 和匹配的 PyCOLMAP wheels 可以从这个 release 下载：
-
-```text
-https://github.com/lyehe/build_gpu_colmap/releases/tag/v4.1.0
-```
+推荐工作流依赖 PyCOLMAP，不依赖 COLMAP binary。`panorama-sfm` 要求 CUDA-enabled PyCOLMAP。COLMAP 4.1.0 prebuild 和匹配的 PyCOLMAP wheels 可以从 [COLMAP Build v4.1.0 release](https://github.com/lyehe/build_gpu_colmap/releases/tag/v4.1.0) 下载。
 
 安装与当前机器 Python 版本、平台、CUDA/runtime 变体匹配的 PyCOLMAP wheel：
 
