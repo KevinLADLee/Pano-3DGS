@@ -21,7 +21,7 @@ workflow, backend choices, output layout, and known limitations.
 Use `uv` from this project directory:
 
 ```bash
-cd /home/invs/research/pano-3dgs
+cd /path/to/pano-3dgs
 uv sync
 ```
 
@@ -63,11 +63,10 @@ modelscope download --model facebook/sam3 --local_dir models/facebook/sam3
 ### PyCOLMAP
 
 The recommended panorama workflow uses PyCOLMAP directly. For Caspar, install a
-PyCOLMAP wheel compiled from the matching COLMAP/Caspar build. The local wheel
-used on the current Linux/Python 3.11 setup is:
+PyCOLMAP wheel compiled from the matching COLMAP/Caspar build:
 
 ```text
-/home/invs/repos/colmap_prebuild/pycolmap-4.1.0+cu128.bundled.cudss-cp311-cp311-manylinux_2_35_x86_64.whl
+/path/to/pycolmap-*.whl
 ```
 
 PyCOLMAP is intentionally not pinned in `pyproject.toml`, because the
@@ -75,7 +74,7 @@ CUDA/Caspar wheel is machine-specific. Install it into this project's uv
 environment:
 
 ```bash
-uv pip install /home/invs/repos/colmap_prebuild/pycolmap-4.1.0+cu128.bundled.cudss-cp311-cp311-manylinux_2_35_x86_64.whl
+uv pip install /path/to/pycolmap-*.whl
 ```
 
 Verify PyCOLMAP before running SfM:
@@ -270,8 +269,8 @@ For a new video with the current perspective + Caspar + PINHOLE workflow, run
 the frame/mask steps first and then run `panorama-sfm`:
 
 ```bash
-RUN=runs/xianjin_cofe_2hz_7680
-VIDEO=/home/invs/datasets/avata360_data/xianjin_cofe.mp4
+VIDEO=/path/to/video.mp4
+RUN=runs/$(basename "$VIDEO" .mp4)_2hz_7680
 
 uv run pano-3dgs extract \
   --run "$RUN" \

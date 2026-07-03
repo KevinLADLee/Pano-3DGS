@@ -54,7 +54,7 @@ def import_pycolmap(pycolmap_path: Path | None = None, require_cuda: bool = True
         raise SystemExit(
             "Official panorama SfM workflow requires CUDA-enabled PyCOLMAP. "
             "Install the CUDA 12 wheel with `uv sync` / `uv pip install pycolmap-cuda12`, "
-            "or build PyCOLMAP from your CUDA COLMAP source with `uv pip install /home/invs/repos/colmap`."
+            "or build PyCOLMAP from your CUDA COLMAP source and install its wheel."
         ) from exc
     if require_cuda:
         if not getattr(pycolmap, "has_cuda", False):

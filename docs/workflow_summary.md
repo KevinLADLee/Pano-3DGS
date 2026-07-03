@@ -298,10 +298,10 @@ torchvision==0.25.0
 
 ### PyCOLMAP
 
-推荐工作流依赖 PyCOLMAP，不依赖 COLMAP binary。`panorama-sfm` 要求 CUDA-enabled PyCOLMAP。在当前环境中，预期 wheel 来自本地 COLMAP prebuild：
+推荐工作流依赖 PyCOLMAP，不依赖 COLMAP binary。`panorama-sfm` 要求 CUDA-enabled PyCOLMAP。安装与当前机器 CUDA/Caspar build 匹配的 PyCOLMAP wheel：
 
 ```text
-/home/invs/repos/colmap_prebuild/pycolmap-4.1.0+cu128.bundled.cudss-cp311-cp311-manylinux_2_35_x86_64.whl
+/path/to/pycolmap-*.whl
 ```
 
 PyCOLMAP 有意没有固定在 `pyproject.toml` 中，因为正确的 wheel 和具体机器、CUDA build 绑定。
