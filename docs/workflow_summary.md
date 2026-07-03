@@ -6,7 +6,7 @@
 
 `pano-3dgs` 的目标是把已经拼接好的 360 equirectangular MP4 视频转换成标准 COLMAP 数据集，使其可以被常见的 3D Gaussian Splatting 工具导入。
 
-当前推荐输出不是 equirectangular COLMAP 模型，而是从 360 全景帧渲染出来的 perspective `PINHOLE` 模型。原因是常见 3DGS 导入工具和 Caspar bundle-adjustment 路径都更稳定地支持普通 `PINHOLE` 相机。
+当前推荐输出不是 equirectangular COLMAP 模型，而是从 360 全景帧渲染出来的 perspective `PINHOLE` 模型。常见 3DGS 导入工具和当前 Caspar bundle-adjustment 路径都按普通 `PINHOLE` 相机使用。
 
 ## 推荐工作流
 
@@ -58,7 +58,7 @@ uv run pano-3dgs --config pano3dgs.toml panorama-sfm --run "$RUN"
 CLI 参数 > TOML 配置 > 内置默认值
 ```
 
-持久化参数只从 TOML 读取，不再支持 `.env` 或 `PANO3DGS_*` 环境变量。这样可以避免多套默认值来源，也更容易 review 参数变化。
+持久化参数写在 TOML 中。CLI 参数用于单次命令覆盖。
 
 例如把 Caspar + PINHOLE 的推荐设置写入 `pano3dgs.toml` 后，`panorama-sfm` 可以简化为：
 
@@ -127,7 +127,7 @@ runs/<video_stem>_2hz_7680/
 
 ### 2. SAM3 动态物体 mask
 
-`sam3` 使用官方 SAM3 实现，并把它作为 git submodule 放在 `third_party/sam3`。这样比从 `/tmp` 或其他临时 checkout import 更可靠。
+`sam3` 使用官方 SAM3 实现，代码位于 `third_party/sam3` submodule。
 
 项目依赖指向本地 submodule：
 
@@ -231,7 +231,7 @@ Caspar 依赖本地 COLMAP/PyCOLMAP build 真实开启并支持 Caspar。公共 
 
 ### 官方 SAM3 Submodule
 
-SAM3 以 `third_party/sam3` 形式 vendored 到项目中，并作为本地 dependency 引用。这比 import `/tmp` 或其他临时 checkout 更稳定。
+SAM3 以 `third_party/sam3` 形式 vendored 到项目中，并作为本地 dependency 引用。
 
 fresh clone 后应运行：
 

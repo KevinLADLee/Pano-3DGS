@@ -1,6 +1,5 @@
 # Copy to pano3dgs.toml and adjust local paths.
-# CLI flags override this file. Environment variables are still supported as a
-# compatibility layer for machine-local overrides.
+# CLI flags override this file for a single invocation.
 
 [paths]
 colmap = "/home/invs/repos/colmap_prebuild/bin/colmap"
