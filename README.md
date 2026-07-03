@@ -37,11 +37,7 @@ cp pano3dgs.example.toml pano3dgs.toml
 
 Edit `pano3dgs.toml` for your machine. The CLI automatically loads the nearest
 `pano3dgs.toml` or `pano-3dgs.toml`; you can also pass `--config path.toml`.
-Priority is: command-line flags, TOML config, `.env` / environment variables,
-built-in defaults.
-
-`.env` remains supported for compatibility and machine-private overrides, but
-new project defaults should go into TOML.
+Priority is: command-line flags, TOML config, built-in defaults.
 
 Optional SAM3 runtime uses the official SAM3 checkout vendored as a git
 submodule. Initialize submodules before syncing dependencies:
@@ -107,7 +103,7 @@ Torch is pinned to a CUDA 12 compatible pair (`torch==2.10.0`,
 
 ## One-Command Flow
 
-From video to final cubemap dataset, with SAM3 enabled by default from `.env`:
+From video to final cubemap dataset, with SAM3 configured in `pano3dgs.toml`:
 
 ```bash
 uv run pano-3dgs run \
@@ -133,7 +129,7 @@ uv run pano-3dgs run \
   --skip-sam3
 ```
 
-You can still override any `.env` default:
+You can still override TOML defaults for a single command:
 
 ```bash
 uv run pano-3dgs run \
@@ -329,75 +325,20 @@ uv run pano-3dgs panorama-sfm --run "$RUN" --clean-panorama-sfm
 
 ## Configuration
 
-The preferred local configuration file is `pano3dgs.toml`. See
+The local configuration file is `pano3dgs.toml`. See
 [`pano3dgs.example.toml`](pano3dgs.example.toml) for all supported sections.
+The CLI automatically searches the current directory and parent directories for
+`pano3dgs.toml` or `pano-3dgs.toml`.
 
-Environment variables remain supported as a compatibility layer.
+Use `--config path/to/file.toml` to run with a specific config file. Command-line
+flags override TOML values for that invocation only.
 
-`.env` keys currently supported:
+`[cubemap].workers = 0` lets the cubemap converter use `[colmap].threads`. Set
+it to `1` for serial conversion or to a fixed worker count such as `8`.
 
-```text
-PANO3DGS_COLMAP
-PANO3DGS_RUNS_DIR
-PANO3DGS_RATE_HZ
-PANO3DGS_EQUIRECT_WIDTH
-PANO3DGS_EQUIRECT_HEIGHT
-PANO3DGS_SCALE_WIDTH
-PANO3DGS_FRAME_JPG_QUALITY
-PANO3DGS_FALLBACK_FPS
-PANO3DGS_PROGRESS
-PANO3DGS_GPU_INDEX
-PANO3DGS_THREADS
-PANO3DGS_CLEAN_COLMAP
-PANO3DGS_MAX_FEATURES
-PANO3DGS_OVERLAP
-PANO3DGS_SAM3_MODEL
-PANO3DGS_SAM3_REPO
-PANO3DGS_DEVICE
-PANO3DGS_DTYPE
-PANO3DGS_SAM3_PROMPTS
-PANO3DGS_SKIP_SAM3
-PANO3DGS_SAM3_SCORE
-PANO3DGS_SAM3_MIN_AREA
-PANO3DGS_SAM3_MAX_AREA
-PANO3DGS_DILATE
-PANO3DGS_DYNAMIC_MASK_DIR
-PANO3DGS_MASK_HEURISTICS
-PANO3DGS_MASK_PROGRESS
-PANO3DGS_SKY_MASK
-PANO3DGS_ZENITH_MASK
-PANO3DGS_NADIR_MASK
-PANO3DGS_FACE_SIZE
-PANO3DGS_FACES
-PANO3DGS_FOV
-PANO3DGS_IMAGE_EXT
-PANO3DGS_CUBEMAP_JPG_QUALITY
-PANO3DGS_CUBEMAP_WORKERS
-PANO3DGS_MASK_NAME_MODE
-PANO3DGS_PYCOLMAP_PATH
-PANO3DGS_REQUIRE_PYCOLMAP_CUDA
-PANO3DGS_PANORAMA_SFM_OUTPUT
-PANO3DGS_PANO_RENDER_TYPE
-PANO3DGS_PANORAMA_VIRTUAL_CAMERA_MODEL
-PANO3DGS_PANORAMA_MATCHER
-PANO3DGS_PANORAMA_MAPPER
-PANO3DGS_PANORAMA_BA_BACKEND
-PANO3DGS_PANORAMA_LOOP_DETECTION
-PANO3DGS_PANORAMA_VOCAB_TREE_PATH
-PANO3DGS_PANORAMA_WORKERS
-PANO3DGS_PANORAMA_USE_INPUT_MASKS
-PANO3DGS_RERENDER_PERSPECTIVE
-PANO3DGS_RERUN_PANORAMA_FEATURES
-PANO3DGS_RERUN_PANORAMA_MATCHING
-PANO3DGS_CLEAN_PANORAMA_SFM
-```
-
-`PANO3DGS_CUBEMAP_WORKERS=0` lets the cubemap converter use `PANO3DGS_THREADS`.
-Set it to `1` for serial conversion or to a fixed worker count such as `8`.
-
-`PANO3DGS_MASK_HEURISTICS=auto` means: use SAM3 / dynamic masks when present,
-and use heuristic masks only for frames without a dynamic mask. Set it to
-`true` to always merge heuristics, or `false` to never use heuristics.
+`[masks].heuristics = "auto"` means: use SAM3 / dynamic masks when present, and
+use heuristic masks only for frames without a dynamic mask. Set it to `true` to
+always merge heuristics, or `false` to never use heuristics.
 
 ## Mask Convention
 
@@ -410,14 +351,16 @@ black = ignore
 
 Cubemap masks are written as `image.jpg.png` by default. Set:
 
-```bash
-PANO3DGS_MASK_NAME_MODE=stem
+```toml
+[cubemap]
+mask_name_mode = "stem"
 ```
 
 to write `image.png`, or:
 
-```bash
-PANO3DGS_MASK_NAME_MODE=both
+```toml
+[cubemap]
+mask_name_mode = "both"
 ```
 
 to write both naming styles.

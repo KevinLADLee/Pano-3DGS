@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from pano_3dgs.colmap_cli import run_colmap
-from pano_3dgs.config import Settings, find_cli_config, load_dotenv, load_settings
+from pano_3dgs.config import Settings, find_cli_config, load_settings
 from pano_3dgs.cubemap import convert_cubemap
 from pano_3dgs.extract import extract_sharpest
 from pano_3dgs.sam3_masks import make_colmap_masks, run_sam3
@@ -220,7 +220,6 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-    load_dotenv()
     settings = load_settings(find_cli_config(argv))
     parser = build_parser(settings)
     args = parser.parse_args(argv)

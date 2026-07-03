@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
@@ -87,63 +86,6 @@ class Settings:
     def resolved_sam3_prompts(self) -> list[str]:
         return list(self.sam3_prompts or [])
 
-
-ENV_FIELDS: dict[str, str] = {
-    "PANO3DGS_COLMAP": "colmap",
-    "PANO3DGS_RUNS_DIR": "runs_dir",
-    "PANO3DGS_RATE_HZ": "rate_hz",
-    "PANO3DGS_EQUIRECT_WIDTH": "equirect_width",
-    "PANO3DGS_EQUIRECT_HEIGHT": "equirect_height",
-    "PANO3DGS_WINDOW_SECONDS": "window_seconds",
-    "PANO3DGS_SCALE_WIDTH": "scale_width",
-    "PANO3DGS_FALLBACK_FPS": "fallback_fps",
-    "PANO3DGS_FRAME_JPG_QUALITY": "frame_jpg_quality",
-    "PANO3DGS_PROGRESS": "progress",
-    "PANO3DGS_GPU_INDEX": "gpu_index",
-    "PANO3DGS_THREADS": "threads",
-    "PANO3DGS_CLEAN_COLMAP": "clean_colmap",
-    "PANO3DGS_MAX_FEATURES": "max_features",
-    "PANO3DGS_OVERLAP": "overlap",
-    "PANO3DGS_SAM3_MODEL": "sam3_model",
-    "PANO3DGS_SAM3_REPO": "sam3_repo",
-    "PANO3DGS_DEVICE": "device",
-    "PANO3DGS_DTYPE": "dtype",
-    "PANO3DGS_SAM3_PROMPTS": "sam3_prompts",
-    "PANO3DGS_SKIP_SAM3": "skip_sam3",
-    "PANO3DGS_SAM3_SCORE": "score",
-    "PANO3DGS_SAM3_MIN_AREA": "min_area",
-    "PANO3DGS_SAM3_MAX_AREA": "max_area",
-    "PANO3DGS_DILATE": "dilate",
-    "PANO3DGS_DYNAMIC_MASK_DIR": "dynamic_mask_dir",
-    "PANO3DGS_MASK_HEURISTICS": "mask_heuristics",
-    "PANO3DGS_MASK_PROGRESS": "mask_progress",
-    "PANO3DGS_SKY_MASK": "sky_mask",
-    "PANO3DGS_ZENITH_MASK": "zenith_mask",
-    "PANO3DGS_NADIR_MASK": "nadir_mask",
-    "PANO3DGS_FACE_SIZE": "face_size",
-    "PANO3DGS_FACES": "faces",
-    "PANO3DGS_FOV": "fov",
-    "PANO3DGS_IMAGE_EXT": "image_ext",
-    "PANO3DGS_CUBEMAP_JPG_QUALITY": "cubemap_jpg_quality",
-    "PANO3DGS_CUBEMAP_WORKERS": "cubemap_workers",
-    "PANO3DGS_MASK_NAME_MODE": "mask_name_mode",
-    "PANO3DGS_PYCOLMAP_PATH": "pycolmap_path",
-    "PANO3DGS_REQUIRE_PYCOLMAP_CUDA": "require_pycolmap_cuda",
-    "PANO3DGS_PANORAMA_SFM_OUTPUT": "panorama_sfm_output",
-    "PANO3DGS_PANO_RENDER_TYPE": "pano_render_type",
-    "PANO3DGS_PANORAMA_VIRTUAL_CAMERA_MODEL": "panorama_virtual_camera_model",
-    "PANO3DGS_PANORAMA_MATCHER": "panorama_matcher",
-    "PANO3DGS_PANORAMA_MAPPER": "panorama_mapper",
-    "PANO3DGS_PANORAMA_BA_BACKEND": "panorama_ba_backend",
-    "PANO3DGS_PANORAMA_LOOP_DETECTION": "panorama_loop_detection",
-    "PANO3DGS_PANORAMA_VOCAB_TREE_PATH": "panorama_vocab_tree_path",
-    "PANO3DGS_PANORAMA_WORKERS": "panorama_workers",
-    "PANO3DGS_PANORAMA_USE_INPUT_MASKS": "panorama_use_input_masks",
-    "PANO3DGS_RERENDER_PERSPECTIVE": "rerender_perspective",
-    "PANO3DGS_RERUN_PANORAMA_FEATURES": "rerun_panorama_features",
-    "PANO3DGS_RERUN_PANORAMA_MATCHING": "rerun_panorama_matching",
-    "PANO3DGS_CLEAN_PANORAMA_SFM": "clean_panorama_sfm",
-}
 
 CONFIG_SECTIONS: dict[str, dict[str, str]] = {
     "paths": {
@@ -272,22 +214,6 @@ FLOAT_FIELDS = {
 }
 
 
-def load_dotenv(start: Path | None = None) -> None:
-    current = (start or Path.cwd()).resolve()
-    for directory in [current] + list(current.parents):
-        env_path = directory / ".env"
-        if not env_path.exists():
-            continue
-        with env_path.open() as f:
-            for raw_line in f:
-                line = raw_line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, value = line.split("=", 1)
-                os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-        return
-
-
 def find_nearest_config(start: Path | None = None) -> Path | None:
     current = (start or Path.cwd()).resolve()
     for directory in [current] + list(current.parents):
@@ -311,7 +237,7 @@ def find_cli_config(argv: list[str] | None) -> Path | None:
 
 
 def load_settings(config_path: Path | None = None) -> Settings:
-    settings = _apply_mapping(Settings(), _env_mapping())
+    settings = Settings()
     if config_path is None:
         config_path = find_nearest_config()
     if config_path is not None:
@@ -327,14 +253,6 @@ def read_toml_config(path: Path) -> dict[str, Any]:
     except tomllib.TOMLDecodeError as exc:
         raise SystemExit(f"invalid TOML config {path}: {exc}") from exc
     return _flatten_config(data)
-
-
-def _env_mapping() -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    for env_name, field_name in ENV_FIELDS.items():
-        if env_name in os.environ:
-            out[field_name] = os.environ[env_name]
-    return out
 
 
 def _flatten_config(data: dict[str, Any]) -> dict[str, Any]:
