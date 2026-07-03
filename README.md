@@ -1,5 +1,7 @@
 # pano-3dgs
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](#)
 [![uv](https://img.shields.io/badge/package%20manager-uv-6f42c1)](#)
 [![PyCOLMAP](https://img.shields.io/badge/SfM-PyCOLMAP-2f6f6f)](#)
