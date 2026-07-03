@@ -1,7 +1,7 @@
 [project]
 name = "pano-3dgs"
 version = "0.1.0"
-description = "Pipeline utilities for converting 360 equirectangular videos into standard COLMAP/3DGS cubemap datasets."
+description = "Pipeline utilities for converting 360 equirectangular videos into PyCOLMAP panorama SfM datasets for 3DGS."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

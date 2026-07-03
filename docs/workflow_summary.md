@@ -263,25 +263,6 @@ PyCOLMAP 有意没有固定在 `pyproject.toml` 中，因为正确的 wheel 和�
 
 `panorama-sfm` 的 `sparse/0`、`sparse_txt/0`、`sparse_equirectangular/0`、`sparse_equirectangular_txt/0` 都由 PyCOLMAP 写出。
 
-### COLMAP CLI
-
-COLMAP binary 只用于 legacy `colmap` 子命令。该命令需要显式传入：
-
-```bash
-uv run pano-3dgs colmap --run "$RUN" --colmap /path/to/colmap
-```
-
-## Legacy 路径
-
-旧命令仍然保留：
-
-```bash
-uv run pano-3dgs colmap --run "$RUN" --colmap /path/to/colmap
-uv run pano-3dgs cubemap --run "$RUN"
-```
-
-这条路径先运行 equirectangular COLMAP，再转换成 cubemap dataset。它对兼容性和实验仍有用，但不再是当前 Caspar + 标准 3DGS 工作流的推荐路线。
-
 ## 已知限制
 
 - Frame extraction 还不是 geometry-aware。它可能保留过近的帧，也可能在快速移动时漏掉覆盖。

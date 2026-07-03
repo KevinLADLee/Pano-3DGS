@@ -45,15 +45,6 @@ sky_mask = true
 zenith_mask = 0.04
 nadir_mask = 0.04
 
-[cubemap]
-face_size = 2048
-faces = "all"
-fov = 90.0
-image_ext = "jpg"
-jpg_quality = 95
-workers = 0
-mask_name_mode = "colmap"
-
 [panorama_sfm]
 render_type = "perspective_overlapping"
 virtual_camera_model = "pinhole"

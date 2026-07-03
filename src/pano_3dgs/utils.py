@@ -2,15 +2,7 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 from pathlib import Path
-
-from pano_3dgs.defaults import DEFAULT_FACES, FACE_AXES
-
-
-def run_cmd(cmd: list[str]) -> None:
-    print("+ " + " ".join(cmd), flush=True)
-    subprocess.run(cmd, check=True)
 
 
 def ensure_dir(path: Path) -> None:
@@ -25,19 +17,6 @@ def parse_box(value: str) -> tuple[float, float, float, float]:
     if not (0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1):
         raise argparse.ArgumentTypeError("box coordinates must be normalized to [0,1]")
     return x0, y0, x1, y1
-
-
-def parse_faces(value: str | list[str]) -> list[str]:
-    if isinstance(value, list):
-        faces = value
-    elif value == "all":
-        return list(DEFAULT_FACES)
-    else:
-        faces = [part.strip() for part in value.split(",") if part.strip()]
-    invalid = [face for face in faces if face not in FACE_AXES]
-    if invalid:
-        raise argparse.ArgumentTypeError(f"unknown face(s): {', '.join(invalid)}")
-    return faces
 
 
 def parse_list(value: str | list[str]) -> list[str]:

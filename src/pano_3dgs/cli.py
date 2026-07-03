@@ -3,12 +3,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from pano_3dgs.colmap_cli import run_colmap
 from pano_3dgs.config import Settings, find_cli_config, load_settings
-from pano_3dgs.cubemap import convert_cubemap
 from pano_3dgs.extract import extract_sharpest
 from pano_3dgs.sam3_masks import make_colmap_masks, run_sam3
-from pano_3dgs.utils import parse_box, parse_faces, parse_list
+from pano_3dgs.utils import parse_box, parse_list
 from pano_3dgs.workflow import run_all, run_panorama_sfm_workflow
 
 
@@ -29,18 +27,6 @@ def add_sfm_options(parser: argparse.ArgumentParser, settings: Settings) -> None
     parser.add_argument("--threads", type=int, default=settings.threads)
     parser.add_argument("--max-features", type=int, default=settings.max_features)
     parser.add_argument("--overlap", type=int, default=settings.overlap)
-
-
-def add_thread_option(parser: argparse.ArgumentParser, settings: Settings) -> None:
-    parser.add_argument("--threads", type=int, default=settings.threads)
-
-
-def add_colmap_options(parser: argparse.ArgumentParser, settings: Settings) -> None:
-    parser.add_argument("--colmap", type=Path, default=settings.colmap)
-    parser.add_argument("--clean-colmap", action=argparse.BooleanOptionalAction, default=settings.clean_colmap)
-    add_sfm_options(parser, settings)
-    parser.add_argument("--equirect-width", type=int, default=settings.equirect_width)
-    parser.add_argument("--equirect-height", type=int, default=settings.equirect_height)
 
 
 def add_extract_options(parser: argparse.ArgumentParser, settings: Settings) -> None:
@@ -80,16 +66,6 @@ def add_sam3_options(parser: argparse.ArgumentParser, settings: Settings) -> Non
     parser.add_argument("--min-area", type=float, default=settings.min_area)
     parser.add_argument("--max-area", type=float, default=settings.max_area)
     parser.add_argument("--dilate", type=int, default=settings.dilate)
-
-
-def add_cubemap_options(parser: argparse.ArgumentParser, settings: Settings) -> None:
-    parser.add_argument("--face-size", type=int, default=settings.face_size)
-    parser.add_argument("--faces", type=parse_faces, default=settings.resolved_faces)
-    parser.add_argument("--fov", type=float, default=settings.fov)
-    parser.add_argument("--image-ext", choices=["jpg", "png"], default=settings.image_ext)
-    parser.add_argument("--cubemap-jpg-quality", type=int, default=settings.cubemap_jpg_quality)
-    parser.add_argument("--cubemap-workers", type=int, default=settings.cubemap_workers)
-    parser.add_argument("--mask-name-mode", choices=["colmap", "stem", "both"], default=settings.mask_name_mode)
 
 
 def add_pycolmap_path_option(parser: argparse.ArgumentParser, settings: Settings) -> None:
@@ -197,20 +173,6 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     add_common_run(p)
     add_mask_options(p, settings)
     p.set_defaults(func=make_colmap_masks)
-
-    p = sub.add_parser("colmap")
-    add_config_option(p)
-    add_common_run(p)
-    add_colmap_options(p, settings)
-    p.set_defaults(func=run_colmap)
-
-    p = sub.add_parser("cubemap")
-    add_config_option(p)
-    add_common_run(p)
-    add_thread_option(p, settings)
-    add_pycolmap_path_option(p, settings)
-    add_cubemap_options(p, settings)
-    p.set_defaults(func=convert_cubemap)
 
     p = sub.add_parser("panorama-sfm")
     add_config_option(p)

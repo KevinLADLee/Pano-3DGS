@@ -13,10 +13,6 @@ Pipeline:
   -> standard 3DGS / LichtFeld Studio
 ```
 
-The older equirectangular-COLMAP-to-cubemap path is still available through
-`colmap` and `cubemap`, but the recommended workflow for Caspar and common 3DGS
-tools is `panorama-sfm` with perspective virtual `PINHOLE` cameras.
-
 See [docs/workflow_summary.md](docs/workflow_summary.md) for the current
 workflow, backend choices, output layout, and known limitations.
 
@@ -177,23 +173,6 @@ uv run pano-3dgs panorama-sfm \
   --panorama-virtual-camera-model pinhole
 ```
 
-Legacy equirectangular COLMAP SfM is still available when a local COLMAP binary
-is explicitly provided:
-
-```bash
-uv run pano-3dgs colmap \
-  --run runs/xianjin_cofe_2hz_7680 \
-  --colmap /path/to/colmap \
-  --clean-colmap
-```
-
-Legacy cubemap conversion uses PyCOLMAP for model IO:
-
-```bash
-uv run pano-3dgs cubemap \
-  --run runs/xianjin_cofe_2hz_7680
-```
-
 To use Caspar GPU bundle adjustment through PyCOLMAP, keep the incremental
 mapper and the virtual camera model as `pinhole`:
 
@@ -311,9 +290,6 @@ The CLI automatically searches the current directory and parent directories for
 Use `--config path/to/file.toml` to run with a specific config file. Command-line
 flags override TOML values for that invocation only.
 
-`[cubemap].workers = 0` lets the cubemap converter use `[sfm].threads`. Set it
-to `1` for serial conversion or to a fixed worker count such as `8`.
-
 `[masks].heuristics = "auto"` means: use SAM3 / dynamic masks when present, and
 use heuristic masks only for frames without a dynamic mask. Set it to `true` to
 always merge heuristics, or `false` to never use heuristics.
@@ -326,22 +302,6 @@ All masks use COLMAP convention:
 white = keep
 black = ignore
 ```
-
-Cubemap masks are written as `image.jpg.png` by default. Set:
-
-```toml
-[cubemap]
-mask_name_mode = "stem"
-```
-
-to write `image.png`, or:
-
-```toml
-[cubemap]
-mask_name_mode = "both"
-```
-
-to write both naming styles.
 
 ## Troubleshooting
 

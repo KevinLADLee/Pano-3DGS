@@ -10,13 +10,12 @@ if sys.version_info >= (3, 11):
 else:  # pragma: no cover - project currently runs on Python 3.11 locally.
     import tomli as tomllib
 
-from pano_3dgs.defaults import DEFAULT_FACES, DEFAULT_SAM3_REPO
-from pano_3dgs.utils import parse_faces, parse_list
+from pano_3dgs.defaults import DEFAULT_SAM3_REPO
+from pano_3dgs.utils import parse_list
 
 
 @dataclass(frozen=True)
 class Settings:
-    colmap: Path | None = None
     runs_dir: Path = Path("runs")
     rate_hz: float = 2.0
     equirect_width: int = 7680
@@ -31,7 +30,6 @@ class Settings:
 
     gpu_index: str = "0"
     threads: int = 8
-    clean_colmap: bool = False
     max_features: int = 12000
     overlap: int = 25
 
@@ -53,14 +51,6 @@ class Settings:
     zenith_mask: float = 0.04
     nadir_mask: float = 0.04
 
-    face_size: int = 2048
-    faces: list[str] | None = None
-    fov: float = 90.0
-    image_ext: str = "jpg"
-    cubemap_jpg_quality: int = 95
-    cubemap_workers: int = 0
-    mask_name_mode: str = "colmap"
-
     pycolmap_path: Path | None = None
     require_pycolmap_cuda: bool = True
     panorama_sfm_output: Path | None = None
@@ -77,10 +67,6 @@ class Settings:
     rerun_panorama_features: bool = False
     rerun_panorama_matching: bool = False
     clean_panorama_sfm: bool = False
-
-    @property
-    def resolved_faces(self) -> list[str]:
-        return list(self.faces or DEFAULT_FACES)
 
     @property
     def resolved_sam3_prompts(self) -> list[str]:
@@ -114,16 +100,6 @@ CONFIG_SECTIONS: dict[str, dict[str, str]] = {
         "path": "pycolmap_path",
         "require_cuda": "require_pycolmap_cuda",
     },
-    "colmap": {
-        "binary": "colmap",
-        "path": "colmap",
-        "clean": "clean_colmap",
-        "clean_colmap": "clean_colmap",
-        "gpu_index": "gpu_index",
-        "threads": "threads",
-        "max_features": "max_features",
-        "overlap": "overlap",
-    },
     "sam3": {
         "model": "sam3_model",
         "repo": "sam3_repo",
@@ -143,15 +119,6 @@ CONFIG_SECTIONS: dict[str, dict[str, str]] = {
         "sky_mask": "sky_mask",
         "zenith_mask": "zenith_mask",
         "nadir_mask": "nadir_mask",
-    },
-    "cubemap": {
-        "face_size": "face_size",
-        "faces": "faces",
-        "fov": "fov",
-        "image_ext": "image_ext",
-        "jpg_quality": "cubemap_jpg_quality",
-        "workers": "cubemap_workers",
-        "mask_name_mode": "mask_name_mode",
     },
     "panorama_sfm": {
         "pycolmap_path": "pycolmap_path",
@@ -174,7 +141,6 @@ CONFIG_SECTIONS: dict[str, dict[str, str]] = {
 }
 
 PATH_FIELDS = {
-    "colmap",
     "runs_dir",
     "sam3_model",
     "sam3_repo",
@@ -185,7 +151,6 @@ PATH_FIELDS = {
 }
 
 BOOL_FIELDS = {
-    "clean_colmap",
     "skip_sam3",
     "sky_mask",
     "require_pycolmap_cuda",
@@ -208,8 +173,6 @@ INT_FIELDS = {
     "overlap",
     "dilate",
     "mask_progress",
-    "face_size",
-    "cubemap_workers",
     "panorama_workers",
 }
 
@@ -222,7 +185,6 @@ FLOAT_FIELDS = {
     "max_area",
     "zenith_mask",
     "nadir_mask",
-    "fov",
 }
 
 
@@ -304,8 +266,6 @@ def _convert_value(field_name: str, value: Any) -> Any:
         return int(value)
     if field_name in FLOAT_FIELDS:
         return float(value)
-    if field_name == "faces":
-        return parse_faces(value)
     if field_name == "sam3_prompts":
         return parse_list(value)
     if field_name in {"roi"}:
