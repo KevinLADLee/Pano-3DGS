@@ -24,13 +24,21 @@ def add_common_run(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--run", type=Path, required=True)
 
 
-def add_colmap_options(parser: argparse.ArgumentParser, settings: Settings) -> None:
-    parser.add_argument("--colmap", type=Path, default=settings.colmap)
+def add_sfm_options(parser: argparse.ArgumentParser, settings: Settings) -> None:
     parser.add_argument("--gpu-index", default=settings.gpu_index)
     parser.add_argument("--threads", type=int, default=settings.threads)
-    parser.add_argument("--clean-colmap", action=argparse.BooleanOptionalAction, default=settings.clean_colmap)
     parser.add_argument("--max-features", type=int, default=settings.max_features)
     parser.add_argument("--overlap", type=int, default=settings.overlap)
+
+
+def add_thread_option(parser: argparse.ArgumentParser, settings: Settings) -> None:
+    parser.add_argument("--threads", type=int, default=settings.threads)
+
+
+def add_colmap_options(parser: argparse.ArgumentParser, settings: Settings) -> None:
+    parser.add_argument("--colmap", type=Path, default=settings.colmap)
+    parser.add_argument("--clean-colmap", action=argparse.BooleanOptionalAction, default=settings.clean_colmap)
+    add_sfm_options(parser, settings)
     parser.add_argument("--equirect-width", type=int, default=settings.equirect_width)
     parser.add_argument("--equirect-height", type=int, default=settings.equirect_height)
 
@@ -84,13 +92,21 @@ def add_cubemap_options(parser: argparse.ArgumentParser, settings: Settings) -> 
     parser.add_argument("--mask-name-mode", choices=["colmap", "stem", "both"], default=settings.mask_name_mode)
 
 
-def add_panorama_sfm_options(parser: argparse.ArgumentParser, settings: Settings) -> None:
+def add_pycolmap_path_option(parser: argparse.ArgumentParser, settings: Settings) -> None:
     parser.add_argument("--pycolmap-path", type=Path, default=settings.pycolmap_path)
+
+
+def add_pycolmap_options(parser: argparse.ArgumentParser, settings: Settings, *, cuda_default: bool) -> None:
+    add_pycolmap_path_option(parser, settings)
     parser.add_argument(
         "--require-pycolmap-cuda",
         action=argparse.BooleanOptionalAction,
-        default=settings.require_pycolmap_cuda,
+        default=settings.require_pycolmap_cuda if cuda_default else False,
     )
+
+
+def add_panorama_sfm_options(parser: argparse.ArgumentParser, settings: Settings) -> None:
+    add_pycolmap_options(parser, settings, cuda_default=True)
     parser.add_argument("--panorama-sfm-output", type=Path, default=settings.panorama_sfm_output)
     parser.add_argument(
         "--pano-render-type",
@@ -191,14 +207,15 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     p = sub.add_parser("cubemap")
     add_config_option(p)
     add_common_run(p)
-    add_colmap_options(p, settings)
+    add_thread_option(p, settings)
+    add_pycolmap_path_option(p, settings)
     add_cubemap_options(p, settings)
     p.set_defaults(func=convert_cubemap)
 
     p = sub.add_parser("panorama-sfm")
     add_config_option(p)
     add_common_run(p)
-    add_colmap_options(p, settings)
+    add_sfm_options(p, settings)
     add_panorama_sfm_options(p, settings)
     p.set_defaults(func=run_panorama_sfm_workflow)
 
@@ -208,12 +225,14 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     p.add_argument("--scene")
     p.add_argument("--runs-dir", type=Path, default=settings.runs_dir)
     p.add_argument("--rate-hz", type=float, default=settings.rate_hz)
+    p.add_argument("--equirect-width", type=int, default=settings.equirect_width)
+    p.add_argument("--equirect-height", type=int, default=settings.equirect_height)
     add_extract_options_no_video(p, settings)
     add_mask_options(p, settings)
     add_sam3_options(p, settings)
     p.add_argument("--skip-sam3", action="store_true", default=settings.skip_sam3)
-    add_colmap_options(p, settings)
-    add_cubemap_options(p, settings)
+    add_sfm_options(p, settings)
+    add_panorama_sfm_options(p, settings)
     p.set_defaults(func=run_all)
 
     return parser

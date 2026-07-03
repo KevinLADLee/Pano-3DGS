@@ -36,7 +36,7 @@ uv run pano-3dgs panorama-sfm \
 
 现在 `sam3` 命令默认会同时写出 `dynamic_masks/` 和合并后的 `colmap_masks/`，所以通常不需要再单独运行 `masks` 命令。
 
-`run` 命令仍然可用，并且在省略 `--scene` 时会自动根据 MP4 文件名生成 run 目录名。但是 `run` 当前结束于旧的 equirectangular COLMAP + cubemap 转换路径。对于当前推荐的 perspective + Caspar 工作流，优先使用显式的 `extract -> sam3 -> panorama-sfm` 三步。
+`run` 命令会执行同一条推荐主线：`extract -> sam3/masks -> panorama-sfm`。省略 `--scene` 时，run 目录名来自 MP4 文件名。
 
 ## 参数配置
 
@@ -199,7 +199,7 @@ Matching 默认使用 sequential matching：
 - `rig_verification = True`
 - `skip_image_pairs_in_same_frame = True`
 
-默认关闭 loop detection，避免 PyCOLMAP/COLMAP 在运行时尝试下载 vocabulary tree。如果需要 loop detection，应提前准备本地 vocabulary tree，并通过 `--panorama-vocab-tree-path` 显式传入。
+默认关闭 loop detection，避免 PyCOLMAP 在运行时尝试下载 vocabulary tree。如果需要 loop detection，应提前准备本地 vocabulary tree，并通过 `--panorama-vocab-tree-path` 显式传入。
 
 ### 5. Mapper 和 Bundle Adjustment
 
@@ -251,19 +251,9 @@ torchvision==0.25.0
 
 运行环境还需要匹配的 NVIDIA runtime packages，包括 cuDNN 9，否则 `import torch` 可能找不到 `libcudnn.so.9` 等库。
 
-### COLMAP CLI
-
-COLMAP binary 默认路径是：
-
-```text
-/home/invs/repos/colmap_prebuild/bin/colmap
-```
-
-它仍用于 legacy commands，也用于在 `panorama-sfm` 后把 sparse binary model 转成 text。
-
 ### PyCOLMAP
 
-`panorama-sfm` 要求 CUDA-enabled PyCOLMAP。在当前环境中，预期 wheel 来自本地 COLMAP prebuild：
+推荐工作流依赖 PyCOLMAP，不依赖 COLMAP binary。`panorama-sfm` 要求 CUDA-enabled PyCOLMAP。在当前环境中，预期 wheel 来自本地 COLMAP prebuild：
 
 ```text
 /home/invs/repos/colmap_prebuild/pycolmap-4.1.0+cu128.bundled.cudss-cp311-cp311-manylinux_2_35_x86_64.whl
@@ -271,14 +261,23 @@ COLMAP binary 默认路径是：
 
 PyCOLMAP 有意没有固定在 `pyproject.toml` 中，因为正确的 wheel 和具体机器、CUDA build 绑定。
 
+`panorama-sfm` 的 `sparse/0`、`sparse_txt/0`、`sparse_equirectangular/0`、`sparse_equirectangular_txt/0` 都由 PyCOLMAP 写出。
+
+### COLMAP CLI
+
+COLMAP binary 只用于 legacy `colmap` 子命令。该命令需要显式传入：
+
+```bash
+uv run pano-3dgs colmap --run "$RUN" --colmap /path/to/colmap
+```
+
 ## Legacy 路径
 
 旧命令仍然保留：
 
 ```bash
-uv run pano-3dgs colmap --run "$RUN"
+uv run pano-3dgs colmap --run "$RUN" --colmap /path/to/colmap
 uv run pano-3dgs cubemap --run "$RUN"
-uv run pano-3dgs run --video "$VIDEO"
 ```
 
 这条路径先运行 equirectangular COLMAP，再转换成 cubemap dataset。它对兼容性和实验仍有用，但不再是当前 Caspar + 标准 3DGS 工作流的推荐路线。

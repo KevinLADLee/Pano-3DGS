@@ -3,19 +3,15 @@ from __future__ import annotations
 import argparse
 import os
 
-from pano_3dgs.colmap_cli import convert_sparse_models_to_text, run_colmap
-from pano_3dgs.cubemap import convert_cubemap
 from pano_3dgs.extract import extract_sharpest
+from pano_3dgs.panorama_sfm import run_panorama_sfm
 from pano_3dgs.sam3_masks import make_colmap_masks, run_sam3
 from pano_3dgs.utils import default_scene_name, ensure_dir, scene_run_dir
 
 
 def run_panorama_sfm_workflow(args: argparse.Namespace) -> None:
-    from pano_3dgs.panorama_sfm import run_panorama_sfm
+    run_panorama_sfm(args)
 
-    output_path = run_panorama_sfm(args)
-    convert_sparse_models_to_text(args.colmap, output_path, "sparse", "sparse_txt")
-    convert_sparse_models_to_text(args.colmap, output_path, "sparse_equirectangular", "sparse_equirectangular_txt")
 
 def run_all(args: argparse.Namespace) -> None:
     if args.scene is None:
@@ -41,5 +37,4 @@ def run_all(args: argparse.Namespace) -> None:
         raise SystemExit("SAM3 is enabled by default, but --sam3-model is not set. Use --skip-sam3 to continue without SAM3 masks.")
 
     make_colmap_masks(args)
-    run_colmap(args)
-    convert_cubemap(args)
+    run_panorama_sfm(args)

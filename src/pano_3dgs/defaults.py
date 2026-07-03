@@ -5,7 +5,6 @@ from pathlib import Path
 import numpy as np
 
 
-DEFAULT_COLMAP = "/home/invs/repos/colmap_prebuild/bin/colmap"
 DEFAULT_SAM3_REPO = Path(__file__).resolve().parents[2] / "third_party" / "sam3"
 DEFAULT_FACES = ["front", "right", "back", "left", "top", "bottom"]
 

@@ -2,7 +2,6 @@
 # CLI flags override this file for a single invocation.
 
 [paths]
-colmap = "/home/invs/repos/colmap_prebuild/bin/colmap"
 runs_dir = "runs"
 
 [run]
@@ -18,12 +17,14 @@ fallback_fps = 30.0
 frame_jpg_quality = 98
 progress = 300
 
-[colmap]
+[sfm]
 gpu_index = "0"
 threads = 8
-clean_colmap = false
 max_features = 12000
 overlap = 25
+
+[pycolmap]
+require_cuda = true
 
 [sam3]
 model = "/home/invs/research/ava360_3dgs/models/facebook_sam3"
@@ -54,7 +55,6 @@ workers = 0
 mask_name_mode = "colmap"
 
 [panorama_sfm]
-require_pycolmap_cuda = true
 render_type = "perspective_overlapping"
 virtual_camera_model = "pinhole"
 matcher = "sequential"

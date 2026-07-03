@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import argparse
 import shutil
-from pathlib import Path
 
 from pano_3dgs.utils import ensure_dir, run_cmd
 
 
 def run_colmap(args: argparse.Namespace) -> None:
+    if args.colmap is None:
+        raise SystemExit("legacy colmap command requires --colmap /path/to/colmap")
     colmap = str(args.colmap)
     run = args.run
     image_dir = run / "frames"
@@ -96,24 +97,3 @@ def run_colmap(args: argparse.Namespace) -> None:
         model_dir = sorted(p for p in sparse.iterdir() if p.is_dir())[0]
     run_cmd([colmap, "model_analyzer", "--path", str(model_dir)])
     run_cmd([colmap, "model_converter", "--input_path", str(model_dir), "--output_path", str(sparse_txt), "--output_type", "TXT"])
-
-def convert_sparse_models_to_text(colmap: Path, root: Path, binary_dir_name: str, text_dir_name: str) -> None:
-    binary_root = root / binary_dir_name
-    text_root = root / text_dir_name
-    if not binary_root.exists():
-        return
-    for model_dir in sorted(p for p in binary_root.iterdir() if p.is_dir()):
-        out_dir = text_root / model_dir.name
-        ensure_dir(out_dir)
-        run_cmd(
-            [
-                str(colmap),
-                "model_converter",
-                "--input_path",
-                str(model_dir),
-                "--output_path",
-                str(out_dir),
-                "--output_type",
-                "TXT",
-            ]
-        )

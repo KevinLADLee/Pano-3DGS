@@ -10,13 +10,13 @@ if sys.version_info >= (3, 11):
 else:  # pragma: no cover - project currently runs on Python 3.11 locally.
     import tomli as tomllib
 
-from pano_3dgs.defaults import DEFAULT_COLMAP, DEFAULT_FACES, DEFAULT_SAM3_REPO
+from pano_3dgs.defaults import DEFAULT_FACES, DEFAULT_SAM3_REPO
 from pano_3dgs.utils import parse_faces, parse_list
 
 
 @dataclass(frozen=True)
 class Settings:
-    colmap: Path = Path(DEFAULT_COLMAP)
+    colmap: Path | None = None
     runs_dir: Path = Path("runs")
     rate_hz: float = 2.0
     equirect_width: int = 7680
@@ -89,7 +89,6 @@ class Settings:
 
 CONFIG_SECTIONS: dict[str, dict[str, str]] = {
     "paths": {
-        "colmap": "colmap",
         "runs_dir": "runs_dir",
     },
     "run": {
@@ -105,10 +104,23 @@ CONFIG_SECTIONS: dict[str, dict[str, str]] = {
         "frame_jpg_quality": "frame_jpg_quality",
         "progress": "progress",
     },
-    "colmap": {
+    "sfm": {
         "gpu_index": "gpu_index",
         "threads": "threads",
+        "max_features": "max_features",
+        "overlap": "overlap",
+    },
+    "pycolmap": {
+        "path": "pycolmap_path",
+        "require_cuda": "require_pycolmap_cuda",
+    },
+    "colmap": {
+        "binary": "colmap",
+        "path": "colmap",
+        "clean": "clean_colmap",
         "clean_colmap": "clean_colmap",
+        "gpu_index": "gpu_index",
+        "threads": "threads",
         "max_features": "max_features",
         "overlap": "overlap",
     },

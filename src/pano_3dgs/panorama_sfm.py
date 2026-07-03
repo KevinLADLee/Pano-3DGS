@@ -16,6 +16,8 @@ import cv2
 import numpy as np
 from PIL import ExifTags, Image, UnidentifiedImageError
 
+from pano_3dgs.pycolmap_io import write_reconstruction_pair
+
 
 @dataclass
 class PanoRenderOptions:
@@ -661,14 +663,22 @@ def run_panorama_sfm(args: argparse.Namespace) -> Path:
 
     for idx, rec in recs.items():
         print(f"#{idx} {rec.summary()}", flush=True)
+        write_reconstruction_pair(
+            rec,
+            rec_path / str(idx),
+            output_path / "sparse_txt" / str(idx),
+        )
 
     equirect_rec_path = output_path / "sparse_equirectangular"
     print("converting perspective rig reconstruction back to equirectangular", flush=True)
     for idx, rec in recs.items():
         equirect_rec = processor.convert_to_equirectangular(rec)
         dst = equirect_rec_path / str(idx)
-        dst.mkdir(exist_ok=True, parents=True)
-        equirect_rec.write(dst)
+        write_reconstruction_pair(
+            equirect_rec,
+            dst,
+            output_path / "sparse_equirectangular_txt" / str(idx),
+        )
         print(f"equirect #{idx} {equirect_rec.summary()}", flush=True)
 
     print(f"done: {output_path}", flush=True)

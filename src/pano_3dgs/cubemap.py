@@ -10,7 +10,9 @@ import cv2
 import numpy as np
 
 from pano_3dgs.defaults import FACE_AXES
-from pano_3dgs.utils import ensure_dir, run_cmd
+from pano_3dgs.panorama_sfm import import_pycolmap
+from pano_3dgs.pycolmap_io import convert_text_model_to_binary
+from pano_3dgs.utils import ensure_dir
 
 
 @dataclass
@@ -289,5 +291,6 @@ def convert_cubemap(args: argparse.Namespace) -> None:
     write_cubemap_images(out_sparse_txt / "images.txt", records)
     copy_points3d_for_splatting(sparse_txt / "points3D.txt", out_sparse_txt / "points3D.txt")
     write_empty_rigs_frames(out_sparse_txt)
-    run_cmd([str(args.colmap), "model_converter", "--input_path", str(out_sparse_txt), "--output_path", str(out_sparse_bin), "--output_type", "BIN"])
+    pycolmap = import_pycolmap(getattr(args, "pycolmap_path", None), require_cuda=False)
+    convert_text_model_to_binary(pycolmap, out_sparse_txt, out_sparse_bin)
     print(f"done: {out}", flush=True)

@@ -47,44 +47,27 @@ git submodule update --init --recursive
 uv sync
 ```
 
-### Prebuilt COLMAP / PyCOLMAP
+### PyCOLMAP
 
-For the Caspar panorama workflow, use the matching prebuilt COLMAP repo and its
-PyCOLMAP wheel. The local prebuild expected by the defaults is:
+The recommended panorama workflow uses PyCOLMAP directly. For Caspar, install a
+PyCOLMAP wheel compiled from the matching COLMAP/Caspar build. The local wheel
+used on the current Linux/Python 3.11 setup is:
 
 ```text
-/home/invs/repos/colmap_prebuild/
-  bin/colmap
-  lib/
-  pycolmap-4.1.0+cu128.bundled.cudss-cp311-cp311-manylinux_2_35_x86_64.whl
+/home/invs/repos/colmap_prebuild/pycolmap-4.1.0+cu128.bundled.cudss-cp311-cp311-manylinux_2_35_x86_64.whl
 ```
 
-If you start from the release archive, unpack it to that path:
-
-```bash
-mkdir -p /home/invs/repos
-unzip COLMAP-4.1.0-ubuntu-22.04-CUDA-cuDSS-Caspar.zip -d /home/invs/repos/colmap_prebuild
-```
-
-Then point the CLI at the prebuilt binary in `pano3dgs.toml`:
-
-```toml
-[paths]
-colmap = "/home/invs/repos/colmap_prebuild/bin/colmap"
-```
-
-Install the bundled PyCOLMAP wheel into this project's uv environment. PyCOLMAP
-is intentionally not pinned in `pyproject.toml`, because the CUDA/Caspar wheel is
-machine-specific. On the current Linux/Python 3.11 setup:
+PyCOLMAP is intentionally not pinned in `pyproject.toml`, because the
+CUDA/Caspar wheel is machine-specific. Install it into this project's uv
+environment:
 
 ```bash
 uv pip install /home/invs/repos/colmap_prebuild/pycolmap-4.1.0+cu128.bundled.cudss-cp311-cp311-manylinux_2_35_x86_64.whl
 ```
 
-Verify both pieces before running SfM:
+Verify PyCOLMAP before running SfM:
 
 ```bash
-/home/invs/repos/colmap_prebuild/bin/colmap version
 uv run python - <<'PY'
 import pycolmap
 print(pycolmap.__version__, "cuda=", pycolmap.has_cuda)
@@ -93,9 +76,8 @@ print("caspar=", hasattr(pycolmap, "CasparBundleAdjustmentOptions"))
 PY
 ```
 
-The prebuild used here is COLMAP 4.1.0 for Ubuntu 22.04 with CUDA 12.8, cuDSS,
-and Caspar enabled. Caspar currently works with the rendered `PINHOLE` virtual
-cameras used by `panorama-sfm`; do not switch it to `SIMPLE_PINHOLE` when using
+Caspar currently works with the rendered `PINHOLE` virtual cameras used by
+`panorama-sfm`; do not switch it to `SIMPLE_PINHOLE` when using
 `--panorama-ba-backend caspar`.
 
 Torch is pinned to a CUDA 12 compatible pair (`torch==2.10.0`,
@@ -103,7 +85,8 @@ Torch is pinned to a CUDA 12 compatible pair (`torch==2.10.0`,
 
 ## One-Command Flow
 
-From video to final cubemap dataset, with SAM3 configured in `pano3dgs.toml`:
+From video to the final perspective `PINHOLE` panorama SfM dataset, with SAM3
+configured in `pano3dgs.toml`:
 
 ```bash
 uv run pano-3dgs run \
@@ -136,7 +119,6 @@ uv run pano-3dgs run \
   --video /path/to/video.mp4 \
   --scene custom_scene_name \
   --rate-hz 3 \
-  --face-size 1536 \
   --gpu-index 1
 ```
 
@@ -148,12 +130,14 @@ runs/<scene>_2hz_7680/
   dynamic_masks/
   dynamic_mask_debug/
   colmap_masks/
-  colmap_cli_shared/
-  cubemap_2048_6faces/
+  panorama_sfm/
     images/
     masks/
+    database.db
     sparse/0/
-    sparse_txt/
+    sparse_txt/0/
+    sparse_equirectangular/0/
+    sparse_equirectangular_txt/0/
 ```
 
 ## Step Commands
@@ -183,28 +167,6 @@ uv run pano-3dgs masks \
 By default this uses SAM3 masks when available and only falls back to heuristic
 sky / zenith / nadir masks when no SAM3 mask exists for a frame.
 
-Run COLMAP equirectangular SfM:
-
-```bash
-uv run pano-3dgs colmap \
-  --run runs/xianjin_cofe_2hz_7680
-```
-
-For a clean rebuild after changing masks:
-
-```bash
-uv run pano-3dgs colmap \
-  --run runs/xianjin_cofe_2hz_7680 \
-  --clean-colmap
-```
-
-Convert to cubemap PINHOLE dataset:
-
-```bash
-uv run pano-3dgs cubemap \
-  --run runs/xianjin_cofe_2hz_7680
-```
-
 Run the recommended perspective panorama SfM workflow:
 
 ```bash
@@ -215,9 +177,25 @@ uv run pano-3dgs panorama-sfm \
   --panorama-virtual-camera-model pinhole
 ```
 
-To try COLMAP's experimental Caspar GPU bundle-adjustment backend for the
-incremental mapper, use the prebuilt PyCOLMAP wheel above and keep the virtual
-camera model as `pinhole`:
+Legacy equirectangular COLMAP SfM is still available when a local COLMAP binary
+is explicitly provided:
+
+```bash
+uv run pano-3dgs colmap \
+  --run runs/xianjin_cofe_2hz_7680 \
+  --colmap /path/to/colmap \
+  --clean-colmap
+```
+
+Legacy cubemap conversion uses PyCOLMAP for model IO:
+
+```bash
+uv run pano-3dgs cubemap \
+  --run runs/xianjin_cofe_2hz_7680
+```
+
+To use Caspar GPU bundle adjustment through PyCOLMAP, keep the incremental
+mapper and the virtual camera model as `pinhole`:
 
 ```bash
 uv run pano-3dgs panorama-sfm \
@@ -333,8 +311,8 @@ The CLI automatically searches the current directory and parent directories for
 Use `--config path/to/file.toml` to run with a specific config file. Command-line
 flags override TOML values for that invocation only.
 
-`[cubemap].workers = 0` lets the cubemap converter use `[colmap].threads`. Set
-it to `1` for serial conversion or to a fixed worker count such as `8`.
+`[cubemap].workers = 0` lets the cubemap converter use `[sfm].threads`. Set it
+to `1` for serial conversion or to a fixed worker count such as `8`.
 
 `[masks].heuristics = "auto"` means: use SAM3 / dynamic masks when present, and
 use heuristic masks only for frames without a dynamic mask. Set it to `true` to
