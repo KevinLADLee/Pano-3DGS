@@ -133,10 +133,18 @@ runs/<video_stem>_2hz_7680/
 
 ```toml
 [tool.uv.sources]
-sam3 = { path = "third_party/sam3" }
+sam3 = { path = "third_party/sam3", editable = true }
 ```
 
-SAM3 从 TOML 的 `[sam3].model` 或 `--sam3-model` 加载 checkpoint。预期的本地模型目录可以包含 `sam3.pt`。
+运行时也固定从 `third_party/sam3` 导入 `sam3` package，不再读取 `[sam3].repo` 或 `--sam3-repo`。
+
+SAM3 从 TOML 的 `[sam3].model` 或 `--sam3-model` 加载 checkpoint。默认权重目录是：
+
+```text
+models/facebook/sam3
+```
+
+该目录可以包含 `sam3.pt`。
 
 官方 Hugging Face 模型页是：
 
@@ -153,7 +161,7 @@ scripts/download_sam3_modelscope.sh
 脚本执行的命令是：
 
 ```bash
-modelscope download --model facebook/sam3
+modelscope download --model facebook/sam3 --local_dir models/facebook/sam3
 ```
 
 ModelScope 页面：
@@ -255,7 +263,7 @@ Caspar 依赖本地 COLMAP/PyCOLMAP build 真实开启并支持 Caspar。公共 
 
 ### 官方 SAM3 Submodule
 
-SAM3 以 `third_party/sam3` 形式 vendored 到项目中，并作为本地 dependency 引用。
+SAM3 以 `third_party/sam3` 形式 vendored 到项目中，并作为 editable 本地 dependency 引用。运行时固定从该 submodule 导入 package。
 
 fresh clone 后应运行：
 
@@ -274,6 +282,8 @@ ModelScope 下载脚本：
 ```bash
 scripts/download_sam3_modelscope.sh
 ```
+
+脚本默认写入 `models/facebook/sam3`，和 `[sam3].model` 默认值一致。
 
 ### CUDA Torch
 

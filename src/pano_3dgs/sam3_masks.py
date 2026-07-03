@@ -9,16 +9,26 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from pano_3dgs.defaults import DYNAMIC_PROMPTS
+from pano_3dgs.defaults import DEFAULT_SAM3_REPO, DYNAMIC_PROMPTS
 from pano_3dgs.utils import ensure_dir
 
 
 def load_official_sam3(args: argparse.Namespace):
     import torch
 
-    if args.sam3_repo:
-        sys.path.insert(0, str(args.sam3_repo))
+    sam3_repo = DEFAULT_SAM3_REPO.resolve()
+    if not (sam3_repo / "sam3").is_dir():
+        raise SystemExit(f"SAM3 submodule package not found: {sam3_repo}")
+    sys.path.insert(0, str(sam3_repo))
+    existing = sys.modules.get("sam3")
+    if existing is not None:
+        existing_origin = Path(getattr(existing, "__file__", "")).resolve()
+        if not existing_origin.is_relative_to(sam3_repo):
+            for name in list(sys.modules):
+                if name == "sam3" or name.startswith("sam3."):
+                    del sys.modules[name]
     try:
+        import sam3
         from sam3.model.sam3_image_processor import Sam3Processor
         from sam3.model_builder import build_sam3_image_model
     except ImportError as exc:
@@ -27,6 +37,9 @@ def load_official_sam3(args: argparse.Namespace):
             "Install facebookresearch/sam3 dependencies first. "
             f"Original import error: {exc}"
         ) from exc
+    sam3_origin = Path(sam3.__file__).resolve()
+    if not sam3_origin.is_relative_to(sam3_repo):
+        raise SystemExit(f"SAM3 imported from {sam3_origin}, expected submodule under {sam3_repo}")
 
     checkpoint = Path(args.sam3_model)
     if checkpoint.is_dir():

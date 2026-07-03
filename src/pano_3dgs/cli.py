@@ -56,7 +56,6 @@ def add_mask_options(parser: argparse.ArgumentParser, settings: Settings) -> Non
 
 def add_sam3_options(parser: argparse.ArgumentParser, settings: Settings) -> None:
     parser.add_argument("--sam3-model", type=Path, default=settings.sam3_model)
-    parser.add_argument("--sam3-repo", type=Path, default=settings.sam3_repo)
     parser.add_argument("--device", default=settings.device)
     parser.add_argument("--dtype", choices=["auto", "float32", "float16", "bfloat16"], default=settings.dtype)
     parser.add_argument("--prompt", action="append")

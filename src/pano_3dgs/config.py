@@ -10,7 +10,7 @@ if sys.version_info >= (3, 11):
 else:  # pragma: no cover - project currently runs on Python 3.11 locally.
     import tomli as tomllib
 
-from pano_3dgs.defaults import DEFAULT_SAM3_REPO
+from pano_3dgs.defaults import DEFAULT_SAM3_MODEL
 from pano_3dgs.utils import parse_list
 
 
@@ -33,8 +33,7 @@ class Settings:
     max_features: int = 12000
     overlap: int = 25
 
-    sam3_model: Path | None = None
-    sam3_repo: Path | None = DEFAULT_SAM3_REPO
+    sam3_model: Path = DEFAULT_SAM3_MODEL
     device: str = "cuda:0"
     dtype: str = "bfloat16"
     sam3_prompts: list[str] | None = None
@@ -102,7 +101,6 @@ CONFIG_SECTIONS: dict[str, dict[str, str]] = {
     },
     "sam3": {
         "model": "sam3_model",
-        "repo": "sam3_repo",
         "device": "device",
         "dtype": "dtype",
         "prompts": "sam3_prompts",
@@ -143,7 +141,6 @@ CONFIG_SECTIONS: dict[str, dict[str, str]] = {
 PATH_FIELDS = {
     "runs_dir",
     "sam3_model",
-    "sam3_repo",
     "dynamic_mask_dir",
     "pycolmap_path",
     "panorama_sfm_output",

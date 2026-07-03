@@ -36,7 +36,8 @@ Edit `pano3dgs.toml` for your machine. The CLI automatically loads the nearest
 Priority is: command-line flags, TOML config, built-in defaults.
 
 Optional SAM3 runtime uses the official SAM3 checkout vendored as a git
-submodule. Initialize submodules before syncing dependencies:
+submodule. `uv` installs it as an editable local dependency from
+`third_party/sam3`. Initialize submodules before syncing dependencies:
 
 ```bash
 git submodule update --init --recursive
@@ -46,7 +47,8 @@ uv sync
 SAM3 model weights are hosted at
 <https://huggingface.co/facebook/sam3>. Access may require accepting the model
 terms on Hugging Face. A ModelScope mirror is available at
-<https://www.modelscope.cn/models/facebook/sam3/summary>; download it with:
+<https://www.modelscope.cn/models/facebook/sam3/summary>. The default local
+weights directory is `models/facebook/sam3`; download to that path with:
 
 ```bash
 scripts/download_sam3_modelscope.sh
@@ -55,7 +57,7 @@ scripts/download_sam3_modelscope.sh
 The script runs:
 
 ```bash
-modelscope download --model facebook/sam3
+modelscope download --model facebook/sam3 --local_dir models/facebook/sam3
 ```
 
 ### PyCOLMAP

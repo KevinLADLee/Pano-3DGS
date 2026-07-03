@@ -627,7 +627,7 @@ requires-dist = [
     { name = "pillow" },
     { name = "psutil" },
     { name = "pycocotools" },
-    { name = "sam3", directory = "third_party/sam3" },
+    { name = "sam3", editable = "third_party/sam3" },
     { name = "setuptools", specifier = "<81" },
     { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", specifier = "==2.10.0" },
     { name = "torchvision", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", specifier = "==0.25.0" },
@@ -1071,7 +1071,7 @@ wheels = [
 
 [[package]]
 name = "sam3"
-source = { directory = "third_party/sam3" }
+source = { editable = "third_party/sam3" }
 dependencies = [
     { name = "ftfy" },
     { name = "huggingface-hub" },

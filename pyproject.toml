@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-sam3 = { path = "third_party/sam3" }
+sam3 = { path = "third_party/sam3", editable = true }
 
 [project.scripts]
 pano-3dgs = "pano_3dgs.cli:main"

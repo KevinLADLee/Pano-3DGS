@@ -27,8 +27,7 @@ overlap = 25
 require_cuda = true
 
 [sam3]
-model = "/home/invs/research/ava360_3dgs/models/facebook_sam3"
-repo = "third_party/sam3"
+model = "models/facebook/sam3"
 device = "cuda:0"
 dtype = "bfloat16"
 prompts = ["sky", "person", "people", "camera", "tripod", "selfie stick", "phone"]
