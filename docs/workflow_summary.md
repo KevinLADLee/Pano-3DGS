@@ -144,7 +144,7 @@ SAM3 从 TOML 的 `[sam3].model` 或 `--sam3-model` 加载 checkpoint。默认�
 models/facebook/sam3
 ```
 
-该目录可以包含 `sam3.pt`。
+`[sam3].model` 可以指向模型目录，也可以直接指向 `sam3.pt`。
 
 官方 Hugging Face 模型页是：
 
@@ -152,7 +152,7 @@ models/facebook/sam3
 https://huggingface.co/facebook/sam3
 ```
 
-如果需要从 ModelScope 下载，可以使用项目脚本：
+从 ModelScope 下载时使用项目脚本：
 
 ```bash
 scripts/download_sam3_modelscope.sh

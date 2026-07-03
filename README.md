@@ -44,11 +44,10 @@ git submodule update --init --recursive
 uv sync
 ```
 
-SAM3 model weights are hosted at
-<https://huggingface.co/facebook/sam3>. Access may require accepting the model
-terms on Hugging Face. A ModelScope mirror is available at
-<https://www.modelscope.cn/models/facebook/sam3/summary>. The default local
-weights directory is `models/facebook/sam3`; download to that path with:
+SAM3 weights are published at <https://huggingface.co/facebook/sam3>; Hugging
+Face may require accepting the model terms. For ModelScope, use the project
+script below. It downloads `facebook/sam3` to the default local weights
+directory: `models/facebook/sam3`.
 
 ```bash
 scripts/download_sam3_modelscope.sh
