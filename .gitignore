@@ -1,5 +1,7 @@
 .venv/
 .env
+pano3dgs.toml
+pano-3dgs.toml
 __pycache__/
 *.pyc
 runs/

@@ -38,6 +38,36 @@ uv run pano-3dgs panorama-sfm \
 
 `run` 命令仍然可用，并且在省略 `--scene` 时会自动根据 MP4 文件名生成 run 目录名。但是 `run` 当前结束于旧的 equirectangular COLMAP + cubemap 转换路径。对于当前推荐的 perspective + Caspar 工作流，优先使用显式的 `extract -> sam3 -> panorama-sfm` 三步。
 
+## 参数配置
+
+当前推荐用 TOML 管理项目参数：
+
+```bash
+cp pano3dgs.example.toml pano3dgs.toml
+```
+
+CLI 会自动查找当前目录或父目录里的 `pano3dgs.toml` / `pano-3dgs.toml`，也可以显式传入：
+
+```bash
+uv run pano-3dgs --config pano3dgs.toml panorama-sfm --run "$RUN"
+```
+
+参数优先级是：
+
+```text
+CLI 参数 > TOML 配置 > .env / 环境变量 > 内置默认值
+```
+
+`.env` 仍然保留兼容支持，适合少量机器私有覆盖；长期维护上，成组的 workflow 参数应优先放到 TOML。这样可以避免大量 `PANO3DGS_*` 分散在 shell 环境里，也更容易 review 参数变化。
+
+例如把 Caspar + PINHOLE 的推荐设置写入 `pano3dgs.toml` 后，`panorama-sfm` 可以简化为：
+
+```bash
+uv run pano-3dgs panorama-sfm \
+  --run "$RUN" \
+  --clean-panorama-sfm
+```
+
 ## 输出目录
 
 典型 run 目录如下：
@@ -106,9 +136,9 @@ runs/<video_stem>_2hz_7680/
 sam3 = { path = "third_party/sam3" }
 ```
 
-SAM3 从 `PANO3DGS_SAM3_MODEL` 或 `--sam3-model` 加载 checkpoint。预期的本地模型目录可以包含 `sam3.pt`。
+SAM3 从 TOML 的 `[sam3].model`、`PANO3DGS_SAM3_MODEL` 或 `--sam3-model` 加载 checkpoint。预期的本地模型目录可以包含 `sam3.pt`。
 
-默认动态 prompts 针对不应参与稳定三维结构的对象，例如人、相机设备、三脚架、自拍杆和手机。本地 `.env` 可以扩展这些 prompts。例如加入 `sky` 可以在天空产生不稳定或不需要的特征时有所帮助，但如果 prompt 过度分割，也可能移除有用的远处背景约束。
+默认动态 prompts 针对不应参与稳定三维结构的对象，例如人、相机设备、三脚架、自拍杆和手机。本地 TOML 或 `.env` 可以扩展这些 prompts。例如加入 `sky` 可以在天空产生不稳定或不需要的特征时有所帮助，但如果 prompt 过度分割，也可能移除有用的远处背景约束。
 
 SAM3 写出的 mask 使用 COLMAP 约定：
 
@@ -123,7 +153,7 @@ black = ignore
 
 `colmap_masks/` 是最终传给 feature extraction 的 mask。
 
-mask 合并步骤会优先使用已有 dynamic masks。在 `PANO3DGS_MASK_HEURISTICS=auto` 时，只有缺少 dynamic SAM3 mask 的帧才会使用启发式 mask。如果强制开启 heuristics，则还可以 mask 掉类似明亮天空的顶部区域，以及固定比例的 zenith / nadir 区域。
+mask 合并步骤会优先使用已有 dynamic masks。在 TOML `[masks].heuristics = "auto"` 或 `PANO3DGS_MASK_HEURISTICS=auto` 时，只有缺少 dynamic SAM3 mask 的帧才会使用启发式 mask。如果强制开启 heuristics，则还可以 mask 掉类似明亮天空的顶部区域，以及固定比例的 zenith / nadir 区域。
 
 当前默认策略是保守的：优先使用 SAM3 mask，除非需要 fallback，否则不额外叠加启发式 mask。这样可以保留更多图像内容给 SfM 使用。
 

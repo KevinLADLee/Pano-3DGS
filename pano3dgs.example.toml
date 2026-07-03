@@ -1,0 +1,70 @@
+# Copy to pano3dgs.toml and adjust local paths.
+# CLI flags override this file. Environment variables are still supported as a
+# compatibility layer for machine-local overrides.
+
+[paths]
+colmap = "/home/invs/repos/colmap_prebuild/bin/colmap"
+runs_dir = "runs"
+
+[run]
+rate_hz = 2.0
+equirect_width = 7680
+equirect_height = 3840
+
+[extract]
+window_seconds = 0.5
+scale_width = 1920
+roi = [0.0, 0.08, 1.0, 0.92]
+fallback_fps = 30.0
+frame_jpg_quality = 98
+progress = 300
+
+[colmap]
+gpu_index = "0"
+threads = 8
+clean_colmap = false
+max_features = 12000
+overlap = 25
+
+[sam3]
+model = "/home/invs/research/ava360_3dgs/models/facebook_sam3"
+repo = "third_party/sam3"
+device = "cuda:0"
+dtype = "bfloat16"
+prompts = ["sky", "person", "people", "camera", "tripod", "selfie stick", "phone"]
+skip = false
+score = 0.35
+min_area = 0.00005
+max_area = 0.80
+dilate = 7
+
+[masks]
+heuristics = "auto"
+progress = 50
+sky_mask = true
+zenith_mask = 0.04
+nadir_mask = 0.04
+
+[cubemap]
+face_size = 2048
+faces = "all"
+fov = 90.0
+image_ext = "jpg"
+jpg_quality = 95
+workers = 0
+mask_name_mode = "colmap"
+
+[panorama_sfm]
+require_pycolmap_cuda = true
+render_type = "perspective_overlapping"
+virtual_camera_model = "pinhole"
+matcher = "sequential"
+mapper = "incremental"
+ba_backend = "caspar"
+loop_detection = false
+workers = 0
+use_input_masks = true
+rerender_perspective = false
+rerun_features = false
+rerun_matching = false
+clean = false

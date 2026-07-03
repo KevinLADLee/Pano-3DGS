@@ -29,33 +29,19 @@ cd /home/invs/research/pano-3dgs
 uv sync
 ```
 
-Create local defaults:
+Create local defaults with TOML:
 
 ```bash
-cp .env.example .env
+cp pano3dgs.example.toml pano3dgs.toml
 ```
 
-Edit `.env` for your machine. Common keys:
+Edit `pano3dgs.toml` for your machine. The CLI automatically loads the nearest
+`pano3dgs.toml` or `pano-3dgs.toml`; you can also pass `--config path.toml`.
+Priority is: command-line flags, TOML config, `.env` / environment variables,
+built-in defaults.
 
-```bash
-PANO3DGS_COLMAP=/home/invs/repos/colmap_prebuild/bin/colmap
-PANO3DGS_RUNS_DIR=runs
-PANO3DGS_GPU_INDEX=0
-PANO3DGS_SAM3_MODEL=/home/invs/research/ava360_3dgs/models/facebook_sam3
-PANO3DGS_SAM3_REPO=third_party/sam3
-PANO3DGS_DEVICE=cuda:0
-PANO3DGS_SAM3_PROMPTS=person,people,camera,tripod,selfie stick,phone
-PANO3DGS_SKIP_SAM3=false
-PANO3DGS_MASK_HEURISTICS=auto
-PANO3DGS_MASK_PROGRESS=50
-PANO3DGS_CLEAN_COLMAP=false
-PANO3DGS_FACE_SIZE=2048
-PANO3DGS_FACES=all
-PANO3DGS_CUBEMAP_WORKERS=0
-```
-
-The CLI automatically loads the nearest `.env` from the current directory or a
-parent directory. Command-line flags override `.env` values.
+`.env` remains supported for compatibility and machine-private overrides, but
+new project defaults should go into TOML.
 
 Optional SAM3 runtime uses the official SAM3 checkout vendored as a git
 submodule. Initialize submodules before syncing dependencies:
@@ -84,10 +70,11 @@ mkdir -p /home/invs/repos
 unzip COLMAP-4.1.0-ubuntu-22.04-CUDA-cuDSS-Caspar.zip -d /home/invs/repos/colmap_prebuild
 ```
 
-Then point the CLI at the prebuilt binary in `.env`:
+Then point the CLI at the prebuilt binary in `pano3dgs.toml`:
 
-```bash
-PANO3DGS_COLMAP=/home/invs/repos/colmap_prebuild/bin/colmap
+```toml
+[paths]
+colmap = "/home/invs/repos/colmap_prebuild/bin/colmap"
 ```
 
 Install the bundled PyCOLMAP wheel into this project's uv environment. PyCOLMAP
@@ -334,7 +321,18 @@ uv run pano-3dgs panorama-sfm \
   --panorama-matcher sequential
 ```
 
-## Environment Variables
+With the recommended values in `pano3dgs.toml`, the final command can be:
+
+```bash
+uv run pano-3dgs panorama-sfm --run "$RUN" --clean-panorama-sfm
+```
+
+## Configuration
+
+The preferred local configuration file is `pano3dgs.toml`. See
+[`pano3dgs.example.toml`](pano3dgs.example.toml) for all supported sections.
+
+Environment variables remain supported as a compatibility layer.
 
 `.env` keys currently supported:
 
