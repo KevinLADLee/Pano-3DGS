@@ -149,9 +149,14 @@ Important defaults:
 ```toml
 [sam3]
 model = "models/facebook/sam3"
+prompts = ["sky"]
 
 [pycolmap]
 require_cuda = true
+
+[sfm]
+feature_type = "sift"
+max_features = 12000
 
 [panorama_sfm]
 render_type = "perspective_overlapping"
@@ -159,10 +164,22 @@ virtual_camera_model = "pinhole"
 matcher = "sequential"
 mapper = "incremental"
 ba_backend = "caspar"
-workers = 0  # auto: 1 on Windows, up to 32 on Linux
+workers = 0  # auto-select from CPU threads and available memory
 ```
 
 Use `--config path/to/file.toml` to select a specific config file.
+
+To test PyCOLMAP ALIKED extraction, provide the model file explicitly:
+
+```bash
+uv run pano-3dgs panorama-sfm \
+  --run "$RUN" \
+  --feature-type aliked_n16rot \
+  --aliked-model-path /path/to/aliked-n16rot.onnx \
+  --aliked-matcher-model-path /path/to/bruteforce-matcher.onnx \
+  --max-features 8192 \
+  --rerun-panorama-features
+```
 
 ## Commands
 

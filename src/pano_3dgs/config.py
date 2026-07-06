@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -31,12 +31,15 @@ class Settings:
     gpu_index: str = "0"
     threads: int = 8
     max_features: int = 12000
+    feature_type: str = "sift"
+    aliked_model_path: Path | None = None
+    aliked_matcher_model_path: Path | None = None
     overlap: int = 25
 
     sam3_model: Path = DEFAULT_SAM3_MODEL
     device: str = "cuda:0"
     dtype: str = "bfloat16"
-    sam3_prompts: list[str] | None = None
+    sam3_prompts: list[str] | None = field(default_factory=lambda: ["sky"])
     skip_sam3: bool = False
     score: float = 0.35
     min_area: float = 0.00005
@@ -57,7 +60,7 @@ class Settings:
     panorama_virtual_camera_model: str = "pinhole"
     panorama_matcher: str = "sequential"
     panorama_mapper: str = "incremental"
-    panorama_ba_backend: str = "ceres"
+    panorama_ba_backend: str = "caspar"
     panorama_loop_detection: bool = False
     panorama_vocab_tree_path: Path | None = None
     panorama_workers: int = 0
@@ -93,6 +96,9 @@ CONFIG_SECTIONS: dict[str, dict[str, str]] = {
         "gpu_index": "gpu_index",
         "threads": "threads",
         "max_features": "max_features",
+        "feature_type": "feature_type",
+        "aliked_model_path": "aliked_model_path",
+        "aliked_matcher_model_path": "aliked_matcher_model_path",
         "overlap": "overlap",
     },
     "pycolmap": {
@@ -143,6 +149,8 @@ PATH_FIELDS = {
     "sam3_model",
     "dynamic_mask_dir",
     "pycolmap_path",
+    "aliked_model_path",
+    "aliked_matcher_model_path",
     "panorama_sfm_output",
     "panorama_vocab_tree_path",
 }

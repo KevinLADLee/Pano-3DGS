@@ -5,7 +5,19 @@ import os
 import re
 import shutil
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+
+import psutil
+
+
+_GIB = 1024**3
+
+
+@dataclass(frozen=True)
+class WorkerChoice:
+    workers: int
+    reason: str
 
 
 def ensure_dir(path: Path) -> None:
@@ -54,3 +66,44 @@ def default_scene_name(video: Path) -> str:
 def scene_run_dir(runs_dir: Path, scene: str, rate_hz: float, width: int) -> Path:
     rate = f"{rate_hz:g}hz".replace(".", "p")
     return runs_dir / f"{scene}_{rate}_{width}"
+
+
+def choose_worker_count(
+    requested_workers: int,
+    item_count: int,
+    *,
+    estimated_per_worker_bytes: int,
+    shared_memory_bytes: int = 0,
+    max_auto_workers: int = 32,
+    windows_max_auto_workers: int = 4,
+    memory_fraction: float = 0.65,
+    min_available_memory_bytes: int = _GIB,
+) -> WorkerChoice:
+    if item_count <= 0:
+        return WorkerChoice(1, "no work items")
+
+    if requested_workers > 0:
+        workers = max(1, min(requested_workers, item_count))
+        return WorkerChoice(workers, f"manual request={requested_workers}")
+
+    logical_cpus = psutil.cpu_count(logical=True) or os.cpu_count() or 1
+    cpu_limit = max(1, logical_cpus - 1)
+    platform_limit = windows_max_auto_workers if sys.platform == "win32" else max_auto_workers
+    cpu_workers = max(1, min(cpu_limit, platform_limit, max_auto_workers, item_count))
+
+    available_memory = psutil.virtual_memory().available
+    usable_memory = max(0, int((available_memory - min_available_memory_bytes - shared_memory_bytes) * memory_fraction))
+    if estimated_per_worker_bytes > 0:
+        memory_workers = max(1, usable_memory // estimated_per_worker_bytes)
+    else:
+        memory_workers = cpu_workers
+    memory_workers = max(1, min(memory_workers, item_count))
+
+    workers = max(1, min(cpu_workers, memory_workers))
+    reason = (
+        f"auto cpu={logical_cpus}, cpu_limit={cpu_workers}, "
+        f"available_mem={available_memory / _GIB:.1f}GiB, "
+        f"estimated_worker_mem={estimated_per_worker_bytes / _GIB:.1f}GiB, "
+        f"memory_limit={memory_workers}"
+    )
+    return WorkerChoice(workers, reason)

@@ -21,6 +21,9 @@ progress = 300
 gpu_index = "0"
 threads = 8
 max_features = 12000
+feature_type = "sift"
+# aliked_model_path = "models/colmap/aliked-n16rot.onnx"
+# aliked_matcher_model_path = "models/colmap/bruteforce-matcher.onnx"
 overlap = 25
 
 [pycolmap]
@@ -30,7 +33,7 @@ require_cuda = true
 model = "models/facebook/sam3"
 device = "cuda:0"
 dtype = "bfloat16"
-prompts = ["sky", "person", "people", "camera", "tripod", "selfie stick", "phone"]
+prompts = ["sky"]
 skip = false
 score = 0.35
 min_area = 0.00005

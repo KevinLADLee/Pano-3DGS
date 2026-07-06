@@ -27,6 +27,13 @@ def add_sfm_options(parser: argparse.ArgumentParser, settings: Settings) -> None
     parser.add_argument("--gpu-index", default=settings.gpu_index)
     parser.add_argument("--threads", type=int, default=settings.threads)
     parser.add_argument("--max-features", type=int, default=settings.max_features)
+    parser.add_argument(
+        "--feature-type",
+        choices=["sift", "aliked_n16rot", "aliked_n32"],
+        default=settings.feature_type,
+    )
+    parser.add_argument("--aliked-model-path", type=Path, default=settings.aliked_model_path)
+    parser.add_argument("--aliked-matcher-model-path", type=Path, default=settings.aliked_matcher_model_path)
     parser.add_argument("--overlap", type=int, default=settings.overlap)
 
 

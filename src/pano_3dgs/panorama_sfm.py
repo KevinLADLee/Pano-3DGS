@@ -6,6 +6,7 @@ import math
 import os
 import sqlite3
 import sys
+import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ import numpy as np
 from PIL import ExifTags, Image, UnidentifiedImageError
 
 from pano_3dgs.pycolmap_io import write_reconstruction_pair
+from pano_3dgs.utils import choose_worker_count
 
 
 @dataclass
@@ -25,6 +27,13 @@ class PanoRenderOptions:
     pitches_deg: Sequence[float]
     hfov_deg: float
     vfov_deg: float
+
+
+@dataclass(frozen=True)
+class RenderMap:
+    x_coords: np.ndarray
+    y_coords: np.ndarray
+    base_mask: np.ndarray
 
 
 PANO_RENDER_OPTIONS: dict[str, PanoRenderOptions] = {
@@ -41,6 +50,40 @@ PANO_RENDER_OPTIONS: dict[str, PanoRenderOptions] = {
         vfov_deg=90.0,
     ),
 }
+
+
+def estimate_pano_render_memory(
+    pano_width: int,
+    pano_height: int,
+    render_options: PanoRenderOptions,
+    *,
+    has_source_mask: bool,
+) -> tuple[int, int]:
+    pano_pixels = pano_width * pano_height
+    virtual_width = int(pano_width * render_options.hfov_deg / 360)
+    virtual_height = int(pano_height * render_options.vfov_deg / 180)
+    virtual_pixels = virtual_width * virtual_height
+    virtual_cameras = render_options.num_steps_yaw * len(render_options.pitches_deg)
+
+    pano_image = pano_pixels * 3
+    source_mask = pano_pixels if has_source_mask else 0
+    rendered_image = virtual_pixels * 3
+    rendered_mask = virtual_pixels
+    rendered_source_mask = virtual_pixels if has_source_mask else 0
+
+    shared_rays = virtual_pixels * 3 * 8
+    shared_remap_coords = virtual_pixels * 2 * 4 * virtual_cameras
+    shared_base_masks = virtual_pixels * virtual_cameras
+    shared_memory = shared_rays + shared_remap_coords + shared_base_masks
+    per_worker = (
+        pano_image
+        + source_mask
+        + rendered_image
+        + rendered_mask
+        + rendered_source_mask
+    )
+    safety_factor = 3.0 if sys.platform == "win32" else 2.0
+    return int(per_worker * safety_factor), shared_memory
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"}
 _DLL_DIRECTORY_HANDLES = []
@@ -150,6 +193,30 @@ def database_camera_model_ids(database_path: Path) -> set[int]:
     return {int(row[0]) for row in rows}
 
 
+def remove_database_files(database_path: Path, reason: str) -> None:
+    print(f"removing panorama SfM database {reason}: {database_path}", flush=True)
+    paths = [
+        database_path,
+        database_path.with_name(f"{database_path.name}-wal"),
+        database_path.with_name(f"{database_path.name}-shm"),
+    ]
+    last_error = None
+    for attempt in range(10):
+        try:
+            for path in paths:
+                if path.exists():
+                    path.unlink()
+            return
+        except PermissionError as exc:
+            last_error = exc
+            time.sleep(0.2 * (attempt + 1))
+    raise SystemExit(
+        f"cannot remove locked database after retries: {database_path}. "
+        "Close any running pano-3dgs/PyCOLMAP/Python process using this run directory, "
+        "then rerun the command."
+    ) from last_error
+
+
 def camera_model_id_name(pycolmap, model_id: int) -> str:
     try:
         return pycolmap.CameraModelId(model_id).name
@@ -235,6 +302,7 @@ class PanoProcessor:
         self._camera = None
         self._pano_size: tuple[int, int] | None = None
         self._rays_in_cam: np.ndarray | None = None
+        self._render_maps: list[RenderMap] | None = None
 
     def process(self, pano_name: str) -> None:
         if not self.rerender and self._render_outputs_exist(pano_name):
@@ -262,27 +330,22 @@ class PanoProcessor:
         assert self._camera is not None
         assert self._pano_size is not None
         assert self._rays_in_cam is not None
+        assert self._render_maps is not None
 
-        for cam_idx, cam_from_pano_rotation in enumerate(self.cams_from_pano_rotation):
-            rays_in_pano = self._rays_in_cam @ cam_from_pano_rotation
-            xy_in_pano = spherical_img_from_cam(self._pano_size, rays_in_pano)
-            xy_in_pano = xy_in_pano.reshape(self._camera.width, self._camera.height, 2).astype(np.float32)
-            xy_in_pano -= 0.5
-            x_coords, y_coords = np.moveaxis(xy_in_pano, [0, 1, 2], [2, 1, 0])
-            image = cv2.remap(pano_image, x_coords, y_coords, cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP)
-
-            closest_camera = np.argmax(rays_in_pano @ self.cam_centers_in_pano.T, axis=-1)
-            mask = (
-                ((closest_camera == cam_idx) * 255)
-                .astype(np.uint8)
-                .reshape(self._camera.width, self._camera.height)
-                .transpose()
+        for cam_idx, render_map in enumerate(self._render_maps):
+            image = cv2.remap(
+                pano_image,
+                render_map.x_coords,
+                render_map.y_coords,
+                cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_WRAP,
             )
+            mask = render_map.base_mask.copy()
             if source_mask is not None:
                 rendered_source_mask = cv2.remap(
                     source_mask,
-                    x_coords,
-                    y_coords,
+                    render_map.x_coords,
+                    render_map.y_coords,
                     cv2.INTER_NEAREST,
                     borderMode=cv2.BORDER_WRAP,
                 )
@@ -297,7 +360,7 @@ class PanoProcessor:
 
             mask_path = self.output_mask_dir / mask_name
             mask_path.parent.mkdir(exist_ok=True, parents=True)
-            if not self.pycolmap.Bitmap.from_array(mask).write(mask_path):
+            if not cv2.imwrite(str(mask_path), mask):
                 raise RuntimeError(f"Cannot write {mask_path}")
 
     def ensure_camera(self, pano_width: int, pano_height: int) -> None:
@@ -315,8 +378,39 @@ class PanoProcessor:
                     rig_camera.camera = self._camera
                 self._pano_size = (pano_width, pano_height)
                 self._rays_in_cam = get_virtual_camera_rays(self._camera)
+                self._render_maps = self._build_render_maps()
             elif (pano_width, pano_height) != self._pano_size:
                 raise ValueError("Panoramas of different sizes are not supported.")
+
+    def _build_render_maps(self) -> list[RenderMap]:
+        assert self._camera is not None
+        assert self._pano_size is not None
+        assert self._rays_in_cam is not None
+
+        render_maps = []
+        score_chunk_size = 262_144
+        for cam_idx, cam_from_pano_rotation in enumerate(self.cams_from_pano_rotation):
+            rays_in_pano = self._rays_in_cam @ cam_from_pano_rotation
+            xy_in_pano = spherical_img_from_cam(self._pano_size, rays_in_pano)
+            xy_in_pano = xy_in_pano.reshape(self._camera.width, self._camera.height, 2).astype(np.float32)
+            xy_in_pano -= 0.5
+            x_coords, y_coords = np.moveaxis(xy_in_pano, [0, 1, 2], [2, 1, 0])
+
+            closest_camera = np.empty(rays_in_pano.shape[0], dtype=np.uint8)
+            for start in range(0, rays_in_pano.shape[0], score_chunk_size):
+                end = min(start + score_chunk_size, rays_in_pano.shape[0])
+                closest_camera[start:end] = np.argmax(
+                    rays_in_pano[start:end] @ self.cam_centers_in_pano.T,
+                    axis=-1,
+                )
+            base_mask = (
+                ((closest_camera == cam_idx) * 255)
+                .astype(np.uint8)
+                .reshape(self._camera.width, self._camera.height)
+                .transpose()
+            )
+            render_maps.append(RenderMap(x_coords.copy(), y_coords.copy(), base_mask.copy()))
+        return render_maps
 
     def ensure_camera_from_pano(self, pano_name: str) -> None:
         if self._camera is not None:
@@ -458,17 +552,46 @@ def render_perspective_images(
         camera_model,
         rerender,
     )
-    default_workers = 1 if sys.platform == "win32" else min(32, max(1, (os.cpu_count() or 2) - 1))
-    workers = max_workers if max_workers > 0 else default_workers
-    workers = max(1, min(workers, len(pano_image_names) or 1))
-    print(f"rendering {len(pano_image_names)} panoramas with {workers} workers", flush=True)
+    if pano_image_names:
+        with Image.open(pano_image_dir / pano_image_names[0]) as pano_pil_image:
+            pano_width, pano_height = pano_pil_image.size
+        estimated_worker_memory, shared_memory = estimate_pano_render_memory(
+            pano_width,
+            pano_height,
+            render_options,
+            has_source_mask=source_mask_dir is not None,
+        )
+    else:
+        estimated_worker_memory = 0
+        shared_memory = 0
+    worker_choice = choose_worker_count(
+        max_workers,
+        len(pano_image_names),
+        estimated_per_worker_bytes=estimated_worker_memory,
+        shared_memory_bytes=shared_memory,
+    )
+    workers = worker_choice.workers
+    print(
+        f"rendering {len(pano_image_names)} panoramas with {workers} workers ({worker_choice.reason})",
+        flush=True,
+    )
+    if pano_image_names:
+        print("precomputing perspective remap maps", flush=True)
+        processor.ensure_camera(pano_width, pano_height)
     done = 0
-    with ThreadPoolExecutor(max_workers=workers) as thread_pool:
-        futures = [thread_pool.submit(processor.process, pano_name) for pano_name in pano_image_names]
-        for future in as_completed(futures):
-            future.result()
-            done += 1
-            print(f"[{done}/{len(pano_image_names)}] rendered perspective rig images", flush=True)
+    previous_cv_threads = cv2.getNumThreads()
+    if workers > 1:
+        cv2.setNumThreads(1)
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as thread_pool:
+            futures = [thread_pool.submit(processor.process, pano_name) for pano_name in pano_image_names]
+            for future in as_completed(futures):
+                future.result()
+                done += 1
+                print(f"[{done}/{len(pano_image_names)}] rendered perspective rig images", flush=True)
+    finally:
+        if workers > 1:
+            cv2.setNumThreads(previous_cv_threads)
     if processor._camera is None and pano_image_names:
         processor.ensure_camera_from_pano(pano_image_names[0])
     return processor
@@ -476,6 +599,60 @@ def render_perspective_images(
 
 def pycolmap_device(pycolmap, require_cuda: bool):
     return pycolmap.Device.cuda if require_cuda else pycolmap.Device.auto
+
+
+def configure_feature_extraction_options(pycolmap, args: argparse.Namespace):
+    options = pycolmap.FeatureExtractionOptions()
+    options.num_threads = args.threads
+    options.gpu_index = str(args.gpu_index)
+
+    if args.feature_type == "sift":
+        options.type = pycolmap.FeatureExtractorType.SIFT
+        options.sift.max_num_features = args.max_features
+    elif args.feature_type == "aliked_n16rot":
+        options.type = pycolmap.FeatureExtractorType.ALIKED_N16ROT
+        options.aliked.max_num_features = args.max_features
+        if not args.aliked_model_path:
+            raise SystemExit("--feature-type aliked_n16rot requires --aliked-model-path")
+        if not args.aliked_model_path.exists():
+            raise SystemExit(f"ALIKED model file not found: {args.aliked_model_path}")
+        options.aliked.n16rot_model_path = str(args.aliked_model_path)
+    elif args.feature_type == "aliked_n32":
+        options.type = pycolmap.FeatureExtractorType.ALIKED_N32
+        options.aliked.max_num_features = args.max_features
+        if not args.aliked_model_path:
+            raise SystemExit("--feature-type aliked_n32 requires --aliked-model-path")
+        if not args.aliked_model_path.exists():
+            raise SystemExit(f"ALIKED model file not found: {args.aliked_model_path}")
+        options.aliked.n32_model_path = str(args.aliked_model_path)
+    else:
+        raise SystemExit(f"unknown feature type: {args.feature_type}")
+
+    return options
+
+
+def configure_feature_matching_options(pycolmap, args: argparse.Namespace):
+    options = pycolmap.FeatureMatchingOptions()
+    options.num_threads = args.threads
+    options.gpu_index = str(args.gpu_index)
+    options.rig_verification = True
+    options.skip_image_pairs_in_same_frame = True
+
+    if args.feature_type == "sift":
+        options.type = pycolmap.FeatureMatcherType.SIFT_BRUTEFORCE
+        options.guided_matching = True
+    elif args.feature_type in {"aliked_n16rot", "aliked_n32"}:
+        options.type = pycolmap.FeatureMatcherType.ALIKED_BRUTEFORCE
+        options.guided_matching = False
+        if not args.aliked_matcher_model_path:
+            raise SystemExit(f"--feature-type {args.feature_type} requires --aliked-matcher-model-path")
+        if not args.aliked_matcher_model_path.exists():
+            raise SystemExit(f"ALIKED matcher model file not found: {args.aliked_matcher_model_path}")
+        options.aliked.brute_force.model_path = str(args.aliked_matcher_model_path)
+    else:
+        raise SystemExit(f"unknown feature type: {args.feature_type}")
+
+    return options
 
 
 def pycolmap_ba_backend(pycolmap, name: str):
@@ -550,6 +727,8 @@ def run_panorama_sfm(args: argparse.Namespace) -> Path:
     pycolmap = import_pycolmap(args.pycolmap_path, args.require_pycolmap_cuda)
     device = pycolmap_device(pycolmap, args.require_pycolmap_cuda)
     pycolmap.set_random_seed(0)
+    extraction_options = configure_feature_extraction_options(pycolmap, args)
+    matching_options = configure_feature_matching_options(pycolmap, args)
 
     output_path = args.panorama_sfm_output or (args.run / "panorama_sfm")
     if args.clean_panorama_sfm and output_path.exists():
@@ -564,8 +743,7 @@ def run_panorama_sfm(args: argparse.Namespace) -> Path:
     rerun_matching = args.rerun_panorama_matching or rerun_features
     reuse_database = database_path.exists() and not rerun_features and not rerun_matching
     if database_path.exists() and (rerun_features or rerun_matching):
-        print(f"removing panorama SfM database for rerun: {database_path}", flush=True)
-        database_path.unlink()
+        remove_database_files(database_path, "for rerun")
 
     image_dir = output_path / "images"
     mask_dir = output_path / "masks"
@@ -585,6 +763,35 @@ def run_panorama_sfm(args: argparse.Namespace) -> Path:
         raise SystemExit(f"no panorama frames found in {pano_image_dir}")
     print(f"found {len(pano_image_names)} panorama frames in {pano_image_dir}", flush=True)
 
+    with Image.open(pano_image_dir / pano_image_names[0]) as pano_pil_image:
+        pano_width, pano_height = pano_pil_image.size
+    expected_camera = create_virtual_camera(
+        pycolmap,
+        pano_width=pano_width,
+        pano_height=pano_height,
+        hfov_deg=PANO_RENDER_OPTIONS[args.pano_render_type].hfov_deg,
+        vfov_deg=PANO_RENDER_OPTIONS[args.pano_render_type].vfov_deg,
+        camera_model=args.panorama_virtual_camera_model,
+    )
+    expected_camera_model_id = int(expected_camera.model)
+    if reuse_database:
+        try:
+            existing_camera_model_ids = database_camera_model_ids(database_path)
+        except sqlite3.Error as exc:
+            remove_database_files(database_path, f"because it is invalid ({exc})")
+            reuse_database = False
+        else:
+            existing_names = ", ".join(
+                camera_model_id_name(pycolmap, model_id)
+                for model_id in sorted(existing_camera_model_ids)
+            )
+            if existing_camera_model_ids != {expected_camera_model_id}:
+                remove_database_files(
+                    database_path,
+                    f"because camera model changed: {existing_names or 'none'} -> {expected_camera.model_name}",
+                )
+                reuse_database = False
+
     processor = render_perspective_images(
         pycolmap,
         pano_image_names,
@@ -599,40 +806,11 @@ def run_panorama_sfm(args: argparse.Namespace) -> Path:
     )
     rig_config = processor.rig_config
     rendered_camera = rig_config.cameras[0].camera
-    expected_camera_model_id = int(rendered_camera.model)
-    if reuse_database:
-        try:
-            existing_camera_model_ids = database_camera_model_ids(database_path)
-        except sqlite3.Error as exc:
-            print(
-                f"removing invalid panorama SfM database: {database_path} ({exc})",
-                flush=True,
-            )
-            database_path.unlink()
-            reuse_database = False
-        else:
-            existing_names = ", ".join(
-                camera_model_id_name(pycolmap, model_id)
-                for model_id in sorted(existing_camera_model_ids)
-            )
-            if existing_camera_model_ids != {expected_camera_model_id}:
-                print(
-                    "removing panorama SfM database because camera model changed: "
-                    f"{existing_names or 'none'} -> {rendered_camera.model_name}",
-                    flush=True,
-                )
-                database_path.unlink()
-                reuse_database = False
-
-    extraction_options = pycolmap.FeatureExtractionOptions()
-    extraction_options.num_threads = args.threads
-    extraction_options.gpu_index = str(args.gpu_index)
-    extraction_options.sift.max_num_features = args.max_features
 
     if reuse_database:
         print(f"reusing existing feature/match database: {database_path}", flush=True)
     else:
-        print("extracting features with perspective rig camera", flush=True)
+        print(f"extracting {args.feature_type} features with perspective rig camera", flush=True)
         pycolmap.extract_features(
             database_path,
             image_dir,
@@ -649,12 +827,6 @@ def run_panorama_sfm(args: argparse.Namespace) -> Path:
         with pycolmap.Database.open(database_path) as db:
             pycolmap.apply_rig_config([rig_config], db)
 
-        matching_options = pycolmap.FeatureMatchingOptions()
-        matching_options.num_threads = args.threads
-        matching_options.gpu_index = str(args.gpu_index)
-        matching_options.guided_matching = True
-        matching_options.rig_verification = True
-        matching_options.skip_image_pairs_in_same_frame = True
         print(f"matching features with {args.panorama_matcher}", flush=True)
         run_matcher(pycolmap, args, database_path, matching_options, device)
 
