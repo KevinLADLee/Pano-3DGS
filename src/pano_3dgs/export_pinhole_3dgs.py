@@ -8,10 +8,10 @@ from pathlib import Path
 import numpy as np
 
 from pano_3dgs.panorama_sfm import (
-    IMAGE_EXTENSIONS,
     PANO_RENDER_OPTIONS,
     create_virtual_camera,
     import_pycolmap,
+    require_complete_mask_set,
     render_perspective_images,
 )
 from pano_3dgs.pycolmap_io import write_reconstruction_pair
@@ -207,14 +207,21 @@ def export_pinhole_3dgs(args: argparse.Namespace) -> Path:
     sparse_dir.mkdir(exist_ok=True, parents=True)
 
     pano_image_dir = args.run / "frames"
-    pano_image_names = sorted(
-        p.relative_to(pano_image_dir).as_posix()
-        for p in pano_image_dir.rglob("*")
-        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+    pano_image_names = [image.name for image in registered_equirect_images(equirect_rec)]
+    missing_images = [
+        name
+        for name in pano_image_names
+        if not (pano_image_dir / name).is_file()
+    ]
+    if missing_images:
+        preview = ", ".join(missing_images[:5])
+        suffix = f" (and {len(missing_images) - 5} more)" if len(missing_images) > 5 else ""
+        raise SystemExit(f"missing {len(missing_images)} registered panorama images: {preview}{suffix}")
+    source_mask_dir = (
+        require_complete_mask_set(pano_image_names, args.run / "colmap_masks")
+        if args.use_input_masks
+        else None
     )
-    if not pano_image_names:
-        raise SystemExit(f"no panorama frames found in {pano_image_dir}")
-    source_mask_dir = args.run / "colmap_masks" if args.use_input_masks else None
 
     print(f"rendering PINHOLE images from {len(pano_image_names)} panoramas", flush=True)
     processor = render_perspective_images(
@@ -223,7 +230,7 @@ def export_pinhole_3dgs(args: argparse.Namespace) -> Path:
         pano_image_dir,
         image_dir,
         mask_dir,
-        source_mask_dir if source_mask_dir and source_mask_dir.exists() else None,
+        source_mask_dir,
         PANO_RENDER_OPTIONS[args.render_type],
         "pinhole",
         args.workers,

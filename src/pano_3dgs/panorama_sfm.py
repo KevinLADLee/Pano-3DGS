@@ -322,16 +322,15 @@ class PanoProcessor:
 
         pano_path = self.pano_image_dir / pano_name
         try:
-            pano_pil_image = Image.open(pano_path)
-        except UnidentifiedImageError:
-            print(f"skipping unreadable image: {pano_path}", flush=True)
-            return
+            with Image.open(pano_path) as pano_pil_image:
+                pano_exif = pano_pil_image.getexif()
+                pano_image = np.asarray(pano_pil_image).copy()
+        except UnidentifiedImageError as exc:
+            raise RuntimeError(f"cannot read panorama image: {pano_path}") from exc
 
-        pano_exif = pano_pil_image.getexif()
         gpsonly_exif = Image.Exif()
         gpsonly_exif[ExifTags.IFD.GPSInfo] = pano_exif.get_ifd(ExifTags.IFD.GPSInfo)
 
-        pano_image = np.asarray(pano_pil_image)
         pano_height, pano_width, *_ = pano_image.shape
         if pano_width != pano_height * 2:
             raise ValueError(f"Only 360 degree panoramas are supported: {pano_path}")
@@ -448,7 +447,7 @@ class PanoProcessor:
             return None
         mask_path = self.source_mask_dir / f"{pano_name}.png"
         if not mask_path.exists():
-            return None
+            raise RuntimeError(f"source mask is missing: {mask_path}")
         mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
         if mask is None:
             raise RuntimeError(f"cannot read mask: {mask_path}")
@@ -607,6 +606,17 @@ def render_perspective_images(
     if processor._camera is None and pano_image_names:
         processor.ensure_camera_from_pano(pano_image_names[0])
     return processor
+
+
+def require_complete_mask_set(image_names: Sequence[str], mask_dir: Path) -> Path:
+    if not mask_dir.is_dir():
+        raise SystemExit(f"input masks were requested, but the mask directory does not exist: {mask_dir}")
+    missing = [image_name for image_name in image_names if not (mask_dir / f"{image_name}.png").is_file()]
+    if missing:
+        preview = ", ".join(missing[:5])
+        suffix = f" (and {len(missing) - 5} more)" if len(missing) > 5 else ""
+        raise SystemExit(f"missing {len(missing)} input masks in {mask_dir}: {preview}{suffix}")
+    return mask_dir
 
 
 def pycolmap_device(pycolmap, require_cuda: bool):
@@ -777,7 +787,6 @@ def run_panorama_sfm(args: argparse.Namespace) -> Path:
     rec_path.mkdir(exist_ok=True, parents=True)
 
     pano_image_dir = args.run / "frames"
-    source_mask_dir = args.run / "colmap_masks" if args.panorama_use_input_masks else None
     pano_image_names = sorted(
         p.relative_to(pano_image_dir).as_posix()
         for p in pano_image_dir.rglob("*")
@@ -786,6 +795,11 @@ def run_panorama_sfm(args: argparse.Namespace) -> Path:
     if not pano_image_names:
         raise SystemExit(f"no panorama frames found in {pano_image_dir}")
     print(f"found {len(pano_image_names)} panorama frames in {pano_image_dir}", flush=True)
+    source_mask_dir = (
+        require_complete_mask_set(pano_image_names, args.run / "colmap_masks")
+        if args.panorama_use_input_masks
+        else None
+    )
 
     with Image.open(pano_image_dir / pano_image_names[0]) as pano_pil_image:
         pano_width, pano_height = pano_pil_image.size
@@ -822,7 +836,7 @@ def run_panorama_sfm(args: argparse.Namespace) -> Path:
         pano_image_dir,
         image_dir,
         mask_dir,
-        source_mask_dir if source_mask_dir and source_mask_dir.exists() else None,
+        source_mask_dir,
         PANO_RENDER_OPTIONS[args.pano_render_type],
         args.panorama_virtual_camera_model,
         args.panorama_workers,

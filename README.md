@@ -351,11 +351,15 @@ black = ignore
 ```
 
 `sam3` writes `dynamic_masks/` and, by default, also writes merged
-`colmap_masks/`. The fallback `masks` command is still available:
+`colmap_masks/`. The standalone `masks` command is also available:
 
 ```bash
 uv run pano-3dgs masks --run "$RUN"
 ```
+
+When an SfM or PINHOLE export command has input masks enabled, every selected
+panorama must have a corresponding file in `colmap_masks/`. Missing masks are
+reported as an error instead of silently running those frames without a mask.
 
 `[masks].heuristics = "auto"` means: use SAM3 masks when present, and use
 heuristic sky / zenith / nadir masks only for frames without dynamic masks.

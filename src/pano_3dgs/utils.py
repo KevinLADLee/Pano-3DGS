@@ -26,20 +26,26 @@ def ensure_dir(path: Path) -> None:
 
 def link_or_copy_file(source: Path, destination: Path) -> str:
     ensure_dir(destination.parent)
-    try:
-        if source.resolve() == destination.resolve():
+    if destination.exists():
+        try:
+            if source.samefile(destination):
+                return "existing"
+        except OSError:
+            pass
+        source_stat = source.stat()
+        destination_stat = destination.stat()
+        if (
+            source_stat.st_size == destination_stat.st_size
+            and source_stat.st_mtime_ns == destination_stat.st_mtime_ns
+        ):
             return "existing"
-    except OSError:
-        pass
     if sys.platform == "win32":
         shutil.copy2(source, destination)
         return "copied"
-    try:
-        os.link(source, destination)
-        return "linked"
-    except OSError:
-        shutil.copy2(source, destination)
-        return "copied"
+    if destination.exists():
+        destination.unlink()
+    os.link(source, destination)
+    return "linked"
 
 
 def parse_box(value: str) -> tuple[float, float, float, float]:

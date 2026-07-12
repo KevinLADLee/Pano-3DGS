@@ -297,11 +297,14 @@ black = ignore
 ```
 
 `sam3` 会写出 `dynamic_masks/`，并默认写出合并后的 `colmap_masks/`。
-也可以单独运行 fallback 合并命令：
+也可以单独运行合并命令：
 
 ```bash
 uv run pano-3dgs masks --run "$RUN"
 ```
+
+SfM 或 PINHOLE 导出命令启用输入 mask 时，每张选中的全景图都必须在
+`colmap_masks/` 中有对应文件。缺失 mask 会直接报错，不会静默改成无 mask 处理。
 
 `[masks].heuristics = "auto"` 表示：优先使用 SAM3 mask；只有缺少动态 mask
 的帧才使用 sky / zenith / nadir 启发式 mask。

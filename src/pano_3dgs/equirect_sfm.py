@@ -16,6 +16,7 @@ from pano_3dgs.panorama_sfm import (
     import_pycolmap,
     pycolmap_ba_backend,
     pycolmap_device,
+    require_complete_mask_set,
     remove_database_files,
     run_matcher,
 )
@@ -121,7 +122,6 @@ def run_equirect_sfm(args: argparse.Namespace) -> Path:
         remove_database_files(database_path, "for equirect rerun")
 
     source_image_dir = args.run / "frames"
-    source_mask_dir = args.run / "colmap_masks" if args.equirect_use_input_masks else None
     image_dir = output_path / "images"
     mask_dir = output_path / "masks"
     rec_path = output_path / "sparse"
@@ -137,10 +137,15 @@ def run_equirect_sfm(args: argparse.Namespace) -> Path:
     if not pano_image_names:
         raise SystemExit(f"no panorama frames found in {source_image_dir}")
     print(f"found {len(pano_image_names)} equirect frames in {source_image_dir}", flush=True)
+    source_mask_dir = (
+        require_complete_mask_set(pano_image_names, args.run / "colmap_masks")
+        if args.equirect_use_input_masks
+        else None
+    )
     prepare_equirect_inputs(
         pano_image_names,
         source_image_dir,
-        source_mask_dir if source_mask_dir and source_mask_dir.exists() else None,
+        source_mask_dir,
         image_dir,
         mask_dir,
     )
@@ -173,7 +178,7 @@ def run_equirect_sfm(args: argparse.Namespace) -> Path:
             database_path,
             image_dir,
             reader_options=pycolmap.ImageReaderOptions(
-                mask_path=mask_dir if mask_dir.exists() else "",
+                mask_path=mask_dir if source_mask_dir is not None else "",
                 camera_model=camera.model_name,
                 camera_params=camera.params_to_string(),
             ),
