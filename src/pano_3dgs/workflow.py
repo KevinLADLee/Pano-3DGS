@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 
 from pano_3dgs.extract import extract_sharpest
+from pano_3dgs.equirect_sfm import run_equirect_sfm
+from pano_3dgs.export_pinhole_3dgs import export_pinhole_3dgs
 from pano_3dgs.panorama_sfm import run_panorama_sfm
 from pano_3dgs.sam3_masks import make_colmap_masks, run_sam3
 from pano_3dgs.utils import default_scene_name, ensure_dir, link_or_copy_file, scene_run_dir
@@ -36,4 +38,11 @@ def run_all(args: argparse.Namespace) -> None:
         raise SystemExit("SAM3 is enabled by default, but --sam3-model is not set. Use --skip-sam3 to continue without SAM3 masks.")
 
     make_colmap_masks(args)
-    run_panorama_sfm(args)
+    if args.sfm_workflow == "equirect":
+        run_equirect_sfm(args)
+        if args.export_pinhole_3dgs:
+            export_pinhole_3dgs(args)
+    elif args.sfm_workflow == "panorama":
+        run_panorama_sfm(args)
+    else:
+        raise SystemExit(f"unknown SfM workflow: {args.sfm_workflow}")

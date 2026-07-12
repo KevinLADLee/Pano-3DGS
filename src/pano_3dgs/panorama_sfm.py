@@ -112,6 +112,18 @@ def add_windows_pycolmap_dll_dirs(pycolmap_path: Path | None = None) -> None:
             if resolved in seen or not resolved.is_dir():
                 continue
             seen.add(resolved)
+            os.environ["PATH"] = f"{resolved}{os.pathsep}{os.environ.get('PATH', '')}"
+            _DLL_DIRECTORY_HANDLES.append(os.add_dll_directory(str(resolved)))
+
+    try:
+        import torch
+    except ImportError:
+        return
+    torch_lib = Path(torch.__file__).resolve().parent / "lib"
+    if torch_lib.is_dir():
+        resolved = torch_lib.resolve()
+        if resolved not in seen:
+            os.environ["PATH"] = f"{resolved}{os.pathsep}{os.environ.get('PATH', '')}"
             _DLL_DIRECTORY_HANDLES.append(os.add_dll_directory(str(resolved)))
 
 
@@ -631,26 +643,38 @@ def configure_feature_extraction_options(pycolmap, args: argparse.Namespace):
     return options
 
 
-def configure_feature_matching_options(pycolmap, args: argparse.Namespace):
+def configure_feature_matching_options(pycolmap, args: argparse.Namespace, *, rig_verification: bool = True):
     options = pycolmap.FeatureMatchingOptions()
     options.num_threads = args.threads
     options.gpu_index = str(args.gpu_index)
-    options.rig_verification = True
-    options.skip_image_pairs_in_same_frame = True
+    options.rig_verification = rig_verification
+    options.skip_image_pairs_in_same_frame = rig_verification
 
-    if args.feature_type == "sift":
+    matcher = getattr(args, "feature_matcher", "auto")
+    if matcher == "auto":
+        matcher = "sift_bruteforce" if args.feature_type == "sift" else "aliked_bruteforce"
+
+    if matcher == "sift_bruteforce":
+        if args.feature_type != "sift":
+            raise SystemExit("feature matcher sift_bruteforce requires --feature-type sift")
         options.type = pycolmap.FeatureMatcherType.SIFT_BRUTEFORCE
         options.guided_matching = True
-    elif args.feature_type in {"aliked_n16rot", "aliked_n32"}:
+    elif matcher in {"aliked_bruteforce", "aliked_lightglue"}:
+        if args.feature_type not in {"aliked_n16rot", "aliked_n32"}:
+            raise SystemExit(f"feature matcher {matcher} requires --feature-type aliked_n16rot or aliked_n32")
         options.type = pycolmap.FeatureMatcherType.ALIKED_BRUTEFORCE
         options.guided_matching = False
         if not args.aliked_matcher_model_path:
             raise SystemExit(f"--feature-type {args.feature_type} requires --aliked-matcher-model-path")
         if not args.aliked_matcher_model_path.exists():
             raise SystemExit(f"ALIKED matcher model file not found: {args.aliked_matcher_model_path}")
-        options.aliked.brute_force.model_path = str(args.aliked_matcher_model_path)
+        if matcher == "aliked_bruteforce":
+            options.aliked.brute_force.model_path = str(args.aliked_matcher_model_path)
+        else:
+            options.type = pycolmap.FeatureMatcherType.ALIKED_LIGHTGLUE
+            options.aliked.lightglue.model_path = str(args.aliked_matcher_model_path)
     else:
-        raise SystemExit(f"unknown feature type: {args.feature_type}")
+        raise SystemExit(f"unknown feature matcher: {matcher}")
 
     return options
 

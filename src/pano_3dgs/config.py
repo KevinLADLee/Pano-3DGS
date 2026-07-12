@@ -20,6 +20,7 @@ class Settings:
     rate_hz: float = 2.0
     equirect_width: int = 7680
     equirect_height: int = 3840
+    sfm_workflow: str = "equirect"
 
     window_seconds: float = 0.5
     scale_width: int = 1920
@@ -32,6 +33,7 @@ class Settings:
     threads: int = 8
     max_features: int = 12000
     feature_type: str = "sift"
+    feature_matcher: str = "auto"
     aliked_model_path: Path | None = None
     aliked_matcher_model_path: Path | None = None
     overlap: int = 25
@@ -70,6 +72,27 @@ class Settings:
     rerun_panorama_matching: bool = False
     clean_panorama_sfm: bool = False
 
+    equirect_sfm_output: Path | None = None
+    equirect_matcher: str = "sequential"
+    equirect_mapper: str = "incremental"
+    equirect_ba_backend: str = "caspar"
+    equirect_loop_detection: bool = False
+    equirect_vocab_tree_path: Path | None = None
+    equirect_use_input_masks: bool = True
+    rerun_equirect_features: bool = False
+    rerun_equirect_matching: bool = False
+    clean_equirect_sfm: bool = False
+
+    export_pinhole_3dgs: bool = True
+    pinhole_3dgs_output: Path | None = None
+    pinhole_3dgs_input_sparse: Path | None = None
+    pinhole_3dgs_render_type: str = "perspective_overlapping"
+    pinhole_3dgs_workers: int = 0
+    pinhole_3dgs_use_input_masks: bool = True
+    pinhole_3dgs_rerender: bool = False
+    pinhole_3dgs_min_track_length: int = 2
+    clean_pinhole_3dgs: bool = False
+
     @property
     def resolved_sam3_prompts(self) -> list[str]:
         return list(self.sam3_prompts or [])
@@ -83,6 +106,7 @@ CONFIG_SECTIONS: dict[str, dict[str, str]] = {
         "rate_hz": "rate_hz",
         "equirect_width": "equirect_width",
         "equirect_height": "equirect_height",
+        "sfm_workflow": "sfm_workflow",
     },
     "extract": {
         "window_seconds": "window_seconds",
@@ -97,6 +121,7 @@ CONFIG_SECTIONS: dict[str, dict[str, str]] = {
         "threads": "threads",
         "max_features": "max_features",
         "feature_type": "feature_type",
+        "feature_matcher": "feature_matcher",
         "aliked_model_path": "aliked_model_path",
         "aliked_matcher_model_path": "aliked_matcher_model_path",
         "overlap": "overlap",
@@ -142,6 +167,31 @@ CONFIG_SECTIONS: dict[str, dict[str, str]] = {
         "rerun_matching": "rerun_panorama_matching",
         "clean": "clean_panorama_sfm",
     },
+    "equirect_sfm": {
+        "pycolmap_path": "pycolmap_path",
+        "require_pycolmap_cuda": "require_pycolmap_cuda",
+        "output": "equirect_sfm_output",
+        "matcher": "equirect_matcher",
+        "mapper": "equirect_mapper",
+        "ba_backend": "equirect_ba_backend",
+        "loop_detection": "equirect_loop_detection",
+        "vocab_tree_path": "equirect_vocab_tree_path",
+        "use_input_masks": "equirect_use_input_masks",
+        "rerun_features": "rerun_equirect_features",
+        "rerun_matching": "rerun_equirect_matching",
+        "clean": "clean_equirect_sfm",
+    },
+    "pinhole_3dgs": {
+        "enabled": "export_pinhole_3dgs",
+        "output": "pinhole_3dgs_output",
+        "input_sparse": "pinhole_3dgs_input_sparse",
+        "render_type": "pinhole_3dgs_render_type",
+        "workers": "pinhole_3dgs_workers",
+        "use_input_masks": "pinhole_3dgs_use_input_masks",
+        "rerender": "pinhole_3dgs_rerender",
+        "min_track_length": "pinhole_3dgs_min_track_length",
+        "clean": "clean_pinhole_3dgs",
+    },
 }
 
 PATH_FIELDS = {
@@ -153,6 +203,10 @@ PATH_FIELDS = {
     "aliked_matcher_model_path",
     "panorama_sfm_output",
     "panorama_vocab_tree_path",
+    "equirect_sfm_output",
+    "equirect_vocab_tree_path",
+    "pinhole_3dgs_output",
+    "pinhole_3dgs_input_sparse",
 }
 
 BOOL_FIELDS = {
@@ -165,6 +219,15 @@ BOOL_FIELDS = {
     "rerun_panorama_features",
     "rerun_panorama_matching",
     "clean_panorama_sfm",
+    "equirect_loop_detection",
+    "equirect_use_input_masks",
+    "rerun_equirect_features",
+    "rerun_equirect_matching",
+    "clean_equirect_sfm",
+    "export_pinhole_3dgs",
+    "pinhole_3dgs_use_input_masks",
+    "pinhole_3dgs_rerender",
+    "clean_pinhole_3dgs",
 }
 
 INT_FIELDS = {
@@ -179,6 +242,8 @@ INT_FIELDS = {
     "dilate",
     "mask_progress",
     "panorama_workers",
+    "pinhole_3dgs_workers",
+    "pinhole_3dgs_min_track_length",
 }
 
 FLOAT_FIELDS = {

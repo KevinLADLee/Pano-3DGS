@@ -7,18 +7,20 @@
 [![PyCOLMAP](https://img.shields.io/badge/SfM-PyCOLMAP-2f6f6f)](#)
 [![SAM3](https://img.shields.io/badge/masks-SAM3-111827)](#)
 
-Convert pre-stitched 360 equirectangular videos into perspective `PINHOLE`
-COLMAP datasets for 3D Gaussian Splatting tools.
+Convert pre-stitched 360 equirectangular videos into COLMAP datasets for
+3D Gaussian Splatting tools. The default workflow reconstructs directly with
+COLMAP `EQUIRECTANGULAR` cameras, then exports a perspective `PINHOLE` dataset
+for importers that require standard pinhole images.
 
 **Tags:** `360-video` `equirectangular` `3dgs` `colmap` `pycolmap` `sam3`
-`caspar-ba` `panorama-sfm`
+`caspar-ba` `equirect-sfm` `panorama-sfm`
 
 ```text
 360 MP4
   -> sharp panorama frames
   -> SAM3 dynamic masks
-  -> perspective PINHOLE panorama SfM
-  -> COLMAP dataset for 3DGS import
+  -> EQUIRECTANGULAR PyCOLMAP SfM
+  -> exported PINHOLE COLMAP dataset for 3DGS import
 ```
 
 The recommended path is fully PyCOLMAP-based. The older COLMAP binary workflow
@@ -31,8 +33,11 @@ summary, backend choices, output layout, and limitations.
 
 - Extracts sharp frames from 360 videos with fixed-rate temporal windows.
 - Uses official SAM3 from the `third_party/sam3` submodule for dynamic masks.
-- Renders each panorama frame into an overlapping perspective rig.
-- Runs PyCOLMAP feature extraction, matching, and mapping on `PINHOLE` cameras.
+- Runs PyCOLMAP feature extraction, matching, and mapping on `EQUIRECTANGULAR`
+  panoramas.
+- Exports the equirectangular reconstruction to an overlapping perspective
+  `PINHOLE` dataset for standard 3DGS importers.
+- Still supports the older perspective-rig `panorama-sfm` workflow.
 - Supports Caspar bundle adjustment when the installed PyCOLMAP wheel exposes it.
 - Writes both binary and text COLMAP models.
 - Uses TOML config with CLI overrides.
@@ -156,7 +161,18 @@ require_cuda = true
 
 [sfm]
 feature_type = "sift"
+feature_matcher = "auto"
 max_features = 12000
+
+[equirect_sfm]
+matcher = "sequential"
+mapper = "incremental"
+ba_backend = "caspar"
+
+[pinhole_3dgs]
+enabled = true
+render_type = "perspective_overlapping"
+workers = 0  # auto-select from CPU threads and available memory
 
 [panorama_sfm]
 render_type = "perspective_overlapping"
@@ -164,21 +180,23 @@ virtual_camera_model = "pinhole"
 matcher = "sequential"
 mapper = "incremental"
 ba_backend = "caspar"
-workers = 0  # auto-select from CPU threads and available memory
+workers = 0
 ```
 
 Use `--config path/to/file.toml` to select a specific config file.
 
-To test PyCOLMAP ALIKED extraction, provide the model file explicitly:
+To test direct equirectangular SfM with ALIKED + LightGlue, provide the model
+files explicitly:
 
 ```bash
-uv run pano-3dgs panorama-sfm \
+uv run pano-3dgs equirect-sfm \
   --run "$RUN" \
   --feature-type aliked_n16rot \
-  --aliked-model-path /path/to/aliked-n16rot.onnx \
-  --aliked-matcher-model-path /path/to/bruteforce-matcher.onnx \
+  --feature-matcher aliked_lightglue \
+  --aliked-model-path models/colmap/aliked-n16rot.onnx \
+  --aliked-matcher-model-path models/colmap/aliked-lightglue.onnx \
   --max-features 8192 \
-  --rerun-panorama-features
+  --rerun-equirect-features
 ```
 
 ## Commands
@@ -189,6 +207,10 @@ uv run pano-3dgs panorama-sfm \
 uv run pano-3dgs run \
   --video /path/to/video.mp4
 ```
+
+By default this runs `extract -> sam3/masks -> equirect-sfm ->
+export-pinhole-3dgs`. Use `--sfm-workflow panorama` to run the older
+perspective-rig SfM route instead.
 
 Useful overrides:
 
@@ -238,7 +260,23 @@ uv run pano-3dgs sam3 \
   --run "$RUN"
 ```
 
-Run perspective panorama SfM:
+Run direct equirectangular SfM:
+
+```bash
+uv run pano-3dgs equirect-sfm \
+  --run "$RUN" \
+  --clean-equirect-sfm
+```
+
+Export a standard perspective `PINHOLE` dataset for 3DGS import:
+
+```bash
+uv run pano-3dgs export-pinhole-3dgs \
+  --run "$RUN" \
+  --clean-pinhole-3dgs
+```
+
+Run the older perspective panorama SfM route:
 
 ```bash
 uv run pano-3dgs panorama-sfm \
@@ -269,6 +307,17 @@ runs/<scene>_2hz_7680/
   dynamic_masks/
   dynamic_mask_debug/
   colmap_masks/
+  equirect_sfm/
+    images/
+    masks/
+    database.db
+    sparse/0/
+    sparse_txt/0/
+  pinhole_3dgs/
+    images/
+    masks/
+    sparse/0/
+    sparse_txt/0/
   panorama_sfm/
     images/
     masks/
@@ -282,13 +331,15 @@ runs/<scene>_2hz_7680/
 Use these paths for standard 3DGS import:
 
 ```text
-panorama_sfm/images/
-panorama_sfm/sparse/0/
+pinhole_3dgs/images/
+pinhole_3dgs/sparse/0/
 ```
 
-`sparse_equirectangular/0` maps the reconstruction back to the original panorama
-frames and is mainly for inspection or tools that support COLMAP's
-`EQUIRECTANGULAR` camera model.
+`equirect_sfm/sparse/0` keeps the direct panorama reconstruction. Use it only
+with tools that support COLMAP's `EQUIRECTANGULAR` camera model.
+
+`panorama_sfm/` is written only when running `panorama-sfm` directly or when
+`run --sfm-workflow panorama` is selected.
 
 ## Masks
 
@@ -314,6 +365,9 @@ heuristic sky / zenith / nadir masks only for frames without dynamic masks.
 Caspar only applies to the incremental mapper. Keep:
 
 ```toml
+[equirect_sfm]
+mapper = "incremental"
+
 [panorama_sfm]
 mapper = "incremental"
 virtual_camera_model = "pinhole"
@@ -339,14 +393,19 @@ Existing perspective images, masks, features, and matches are reused when
 possible.
 
 ```bash
+uv run pano-3dgs equirect-sfm --run "$RUN" --rerun-equirect-features
+uv run pano-3dgs equirect-sfm --run "$RUN" --rerun-equirect-matching
+uv run pano-3dgs equirect-sfm --run "$RUN" --clean-equirect-sfm
+uv run pano-3dgs export-pinhole-3dgs --run "$RUN" --rerender-pinhole
+uv run pano-3dgs export-pinhole-3dgs --run "$RUN" --clean-pinhole-3dgs
 uv run pano-3dgs panorama-sfm --run "$RUN" --rerender-perspective
 uv run pano-3dgs panorama-sfm --run "$RUN" --rerun-panorama-features
 uv run pano-3dgs panorama-sfm --run "$RUN" --rerun-panorama-matching
 uv run pano-3dgs panorama-sfm --run "$RUN" --clean-panorama-sfm
 ```
 
-Use `--clean-panorama-sfm` after changing render settings, camera model, or
-major mask settings.
+Use the corresponding `--clean-*` flag after changing camera model, render
+settings, feature type, matcher type, or major mask settings.
 
 ## Troubleshooting
 
