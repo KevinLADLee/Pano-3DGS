@@ -10,8 +10,12 @@ import urllib.request
 from dataclasses import dataclass
 
 
-DEFAULT_RELEASE_API_URL = "https://api.github.com/repos/lyehe/build_gpu_colmap/releases/tags/v4.1.0"
-DEFAULT_RELEASE_DOWNLOAD_BASE = "https://github.com/lyehe/build_gpu_colmap/releases/download/v4.1.0"
+DEFAULT_RELEASE_API_URL = (
+    "https://api.github.com/repos/lyehe/build_gpu_colmap/releases/tags/v4.1.0"
+)
+DEFAULT_RELEASE_DOWNLOAD_BASE = (
+    "https://github.com/lyehe/build_gpu_colmap/releases/download/v4.1.0"
+)
 DEFAULT_PYCOLMAP_VERSION = "4.1.0"
 
 
@@ -29,11 +33,15 @@ def current_platform_tag() -> str:
     machine = platform.machine().lower()
     if sys.platform == "win32":
         if machine not in {"amd64", "x86_64"}:
-            raise SystemExit(f"unsupported Windows architecture for prebuilt PyCOLMAP: {machine}")
+            raise SystemExit(
+                f"unsupported Windows architecture for prebuilt PyCOLMAP: {machine}"
+            )
         return "win_amd64"
     if sys.platform == "linux":
         if machine not in {"x86_64", "amd64"}:
-            raise SystemExit(f"unsupported Linux architecture for prebuilt PyCOLMAP: {machine}")
+            raise SystemExit(
+                f"unsupported Linux architecture for prebuilt PyCOLMAP: {machine}"
+            )
         return "manylinux_2_35_x86_64"
     raise SystemExit(f"unsupported platform for prebuilt PyCOLMAP: {sys.platform}")
 
@@ -43,7 +51,9 @@ def default_variant() -> str:
         return "cuda.cudss"
     if sys.platform == "linux":
         return "cu128.bundled.cudss"
-    return "cpu"
+    raise SystemExit(
+        f"unsupported platform for a default PyCOLMAP wheel: {sys.platform}"
+    )
 
 
 def load_release_assets(release_api_url: str) -> list[ReleaseAsset]:
@@ -57,7 +67,9 @@ def load_release_assets(release_api_url: str) -> list[ReleaseAsset]:
     with urllib.request.urlopen(request, timeout=30) as response:
         payload = json.loads(response.read().decode("utf-8"))
     return [
-        ReleaseAsset(name=asset["name"], browser_download_url=asset["browser_download_url"])
+        ReleaseAsset(
+            name=asset["name"], browser_download_url=asset["browser_download_url"]
+        )
         for asset in payload.get("assets", [])
     ]
 
@@ -69,13 +81,15 @@ def select_pycolmap_wheel(
     platform_tag: str,
     variant: str,
 ) -> ReleaseAsset:
-    prefix = f"pycolmap-"
+    prefix = "pycolmap-"
     variant_part = f"+{variant}-"
     tag_part = f"-{python_tag}-{python_tag}-{platform_tag}.whl"
     matches = [
         asset
         for asset in assets
-        if asset.name.startswith(prefix) and variant_part in asset.name and asset.name.endswith(tag_part)
+        if asset.name.startswith(prefix)
+        and variant_part in asset.name
+        and asset.name.endswith(tag_part)
     ]
     if len(matches) == 1:
         return matches[0]
@@ -107,7 +121,7 @@ def install_wheel(url: str, installer: str) -> None:
     if installer == "uv":
         if shutil.which("uv") is None:
             raise SystemExit("uv was requested but was not found on PATH")
-        command = ["uv", "pip", "install", url]
+        command = ["uv", "pip", "install", "--python", sys.executable, url]
     elif installer == "pip":
         command = [sys.executable, "-m", "pip", "install", url]
     else:

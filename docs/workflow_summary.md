@@ -211,7 +211,7 @@ black = ignore
 
 mask 合并步骤会优先使用已有 dynamic masks。在 TOML `[masks].heuristics = "auto"` 时，只有缺少 dynamic SAM3 mask 的帧才会使用启发式 mask。如果强制开启 heuristics，则还可以 mask 掉类似明亮天空的顶部区域，以及固定比例的 zenith / nadir 区域。
 
-当前默认策略是保守的：优先使用 SAM3 mask，除非需要 fallback，否则不额外叠加启发式 mask。这样可以保留更多图像内容给 SfM 使用。
+当前默认策略是保守的：优先使用 SAM3 mask，仅在缺少动态 mask 时使用启发式 mask。这样可以保留更多图像内容给 SfM 使用。
 
 ### 4. Perspective Panorama SfM
 

@@ -45,7 +45,9 @@ def load_official_sam3(args: argparse.Namespace):
         ) from exc
     sam3_origin = Path(sam3.__file__).resolve()
     if not sam3_origin.is_relative_to(sam3_repo):
-        raise SystemExit(f"SAM3 imported from {sam3_origin}, expected submodule under {sam3_repo}")
+        raise SystemExit(
+            f"SAM3 imported from {sam3_origin}, expected submodule under {sam3_repo}"
+        )
 
     checkpoint = Path(args.sam3_model)
     if checkpoint.is_dir():
@@ -67,14 +69,23 @@ def load_official_sam3(args: argparse.Namespace):
     processor = Sam3Processor(model, device=device, confidence_threshold=args.score)
     return model, processor, torch
 
-def mask_intersects_roi(mask: np.ndarray, rois: list[tuple[float, float, float, float]]) -> bool:
+
+def mask_intersects_roi(
+    mask: np.ndarray, rois: list[tuple[float, float, float, float]]
+) -> bool:
     if not rois:
         return True
     height, width = mask.shape
     for x0, y0, x1, y1 in rois:
-        if np.any(mask[int(y0 * height) : int(np.ceil(y1 * height)), int(x0 * width) : int(np.ceil(x1 * width))]):
+        if np.any(
+            mask[
+                int(y0 * height) : int(np.ceil(y1 * height)),
+                int(x0 * width) : int(np.ceil(x1 * width)),
+            ]
+        ):
             return True
     return False
+
 
 def run_sam3(args: argparse.Namespace) -> None:
     frames = args.run / "frames"
@@ -93,9 +104,12 @@ def run_sam3(args: argparse.Namespace) -> None:
         cv2.imwrite(str(out / f"{path.name}.png"), keep)
         write_debug_overlay(path, keep, debug / path.name)
         ignored = 1.0 - float((keep > 0).mean())
-        print(f"[{idx}/{len(image_paths)}] {path.name}: ignored={ignored:.4f}", flush=True)
+        print(
+            f"[{idx}/{len(image_paths)}] {path.name}: ignored={ignored:.4f}", flush=True
+        )
     if getattr(args, "sam3_colmap_masks", False):
         make_colmap_masks(args)
+
 
 def build_sam3_keep_mask(
     image_path: Path,
@@ -111,7 +125,12 @@ def build_sam3_keep_mask(
     ignored = np.zeros((height, width), np.uint8)
     min_area_px = args.min_area * width * height
     max_area_px = args.max_area * width * height
-    autocast_dtype = {"auto": None, "float32": None, "float16": torch.float16, "bfloat16": torch.bfloat16}[args.dtype]
+    autocast_dtype = {
+        "auto": None,
+        "float32": None,
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+    }[args.dtype]
 
     for prompt in prompts:
         if args.device.startswith("cuda") and autocast_dtype is not None:
@@ -148,13 +167,17 @@ def build_sam3_keep_mask(
     keep[ignored > 0] = 0
     return keep
 
-def write_debug_overlay(image_path: Path, keep_mask: np.ndarray, out_path: Path) -> None:
+
+def write_debug_overlay(
+    image_path: Path, keep_mask: np.ndarray, out_path: Path
+) -> None:
     image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
     if image is None:
         return
     overlay = image.copy()
     overlay[keep_mask == 0] = (0, 0, 255)
     cv2.imwrite(str(out_path), cv2.addWeighted(image, 0.65, overlay, 0.35, 0))
+
 
 def make_colmap_masks(args: argparse.Namespace) -> None:
     frames = args.run / "frames"
@@ -170,7 +193,9 @@ def make_colmap_masks(args: argparse.Namespace) -> None:
         out_path = out / f"{path.name}.png"
         dyn_path = dynamic / f"{path.name}.png"
         has_dynamic = dynamic.exists() and dyn_path.exists()
-        use_heuristics = (not has_dynamic) if args.mask_heuristics is None else args.mask_heuristics
+        use_heuristics = (
+            (not has_dynamic) if args.mask_heuristics is None else args.mask_heuristics
+        )
 
         if not use_heuristics and has_dynamic:
             shutil.copyfile(dyn_path, out_path)

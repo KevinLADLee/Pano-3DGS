@@ -9,12 +9,12 @@ import numpy as np
 
 from pano_3dgs.panorama_sfm import (
     PANO_RENDER_OPTIONS,
-    create_virtual_camera,
-    import_pycolmap,
-    require_complete_mask_set,
     render_perspective_images,
+    virtual_image_names,
 )
 from pano_3dgs.pycolmap_io import write_reconstruction_pair
+from pano_3dgs.sfm_utils import import_pycolmap
+from pano_3dgs.utils import prune_generated_files, require_complete_mask_set
 
 
 @dataclass
@@ -25,10 +25,6 @@ class VirtualImage:
     keypoints: list[np.ndarray]
 
 
-def run_export_pinhole_3dgs_workflow(args: argparse.Namespace) -> None:
-    export_pinhole_3dgs(args)
-
-
 def resolve_input_sparse(args: argparse.Namespace) -> Path:
     if args.input_sparse:
         path = args.input_sparse
@@ -36,7 +32,11 @@ def resolve_input_sparse(args: argparse.Namespace) -> Path:
         path = args.run / "equirect_sfm" / "sparse" / "0"
         if not path.exists():
             sparse_root = args.run / "equirect_sfm" / "sparse"
-            candidates = sorted(p for p in sparse_root.iterdir() if p.is_dir()) if sparse_root.exists() else []
+            candidates = (
+                sorted(p for p in sparse_root.iterdir() if p.is_dir())
+                if sparse_root.exists()
+                else []
+            )
             if candidates:
                 path = candidates[0]
     if not path.exists():
@@ -70,31 +70,21 @@ def image_cam_from_world(image):
     return cam_from_world() if callable(cam_from_world) else cam_from_world
 
 
-def make_pinhole_camera(pycolmap, pano_width: int, pano_height: int, render_type: str):
-    render_options = PANO_RENDER_OPTIONS[render_type]
-    camera = create_virtual_camera(
-        pycolmap,
-        pano_width=pano_width,
-        pano_height=pano_height,
-        hfov_deg=render_options.hfov_deg,
-        vfov_deg=render_options.vfov_deg,
-        camera_model="pinhole",
-    )
-    camera.camera_id = 1
-    camera.has_prior_focal_length = True
-    return camera
-
-
-def build_virtual_images(pycolmap, equirect_images: list, processor) -> tuple[dict[tuple[int, int], VirtualImage], object]:
-    assert processor._camera is not None
-    camera = processor._camera
+def build_virtual_images(
+    pycolmap,
+    equirect_images: list,
+    processor,
+) -> tuple[dict[tuple[int, int], VirtualImage], object]:
+    camera = processor.camera
     camera.camera_id = 1
     virtual_images: dict[tuple[int, int], VirtualImage] = {}
     zero_translation = np.zeros((3, 1), dtype=np.float64)
     next_image_id = 1
     for equirect_image in equirect_images:
         pano_from_world = image_cam_from_world(equirect_image)
-        for cam_idx, cam_from_pano_rotation in enumerate(processor.cams_from_pano_rotation):
+        for cam_idx, cam_from_pano_rotation in enumerate(
+            processor.cams_from_pano_rotation
+        ):
             cam_from_pano = pycolmap.Rigid3d(
                 pycolmap.Rotation3d(cam_from_pano_rotation),
                 zero_translation,
@@ -111,10 +101,9 @@ def build_virtual_images(pycolmap, equirect_images: list, processor) -> tuple[di
     return virtual_images, camera
 
 
-def project_observations_to_pinhole(rec, processor, virtual_images: dict[tuple[int, int], VirtualImage], camera):
-    assert processor._pano_size is not None
-    assert processor.cam_centers_in_pano is not None
-
+def project_observations_to_pinhole(
+    rec, processor, virtual_images: dict[tuple[int, int], VirtualImage], camera
+):
     equirect_images = rec.images
     projected_tracks: dict[int, list[tuple[int, int]]] = {}
     camera_width = camera.width
@@ -149,15 +138,21 @@ def project_observations_to_pinhole(rec, processor, virtual_images: dict[tuple[i
     return projected_tracks
 
 
-def build_pinhole_reconstruction(pycolmap, equirect_rec, processor, min_track_length: int):
+def build_pinhole_reconstruction(
+    pycolmap, equirect_rec, processor, min_track_length: int
+):
     equirect_images = registered_equirect_images(equirect_rec)
     virtual_images, camera = build_virtual_images(pycolmap, equirect_images, processor)
-    projected_tracks = project_observations_to_pinhole(equirect_rec, processor, virtual_images, camera)
+    projected_tracks = project_observations_to_pinhole(
+        equirect_rec, processor, virtual_images, camera
+    )
 
     pinhole_rec = pycolmap.Reconstruction()
     pinhole_rec.add_camera_with_trivial_rig(camera)
 
-    for virtual_image in sorted(virtual_images.values(), key=lambda image: image.image_id):
+    for virtual_image in sorted(
+        virtual_images.values(), key=lambda image: image.image_id
+    ):
         pinhole_rec.add_image_with_trivial_frame(
             pycolmap.Image(
                 name=virtual_image.name,
@@ -207,23 +202,41 @@ def export_pinhole_3dgs(args: argparse.Namespace) -> Path:
     sparse_dir.mkdir(exist_ok=True, parents=True)
 
     pano_image_dir = args.run / "frames"
-    pano_image_names = [image.name for image in registered_equirect_images(equirect_rec)]
+    pano_image_names = [
+        image.name for image in registered_equirect_images(equirect_rec)
+    ]
     missing_images = [
-        name
-        for name in pano_image_names
-        if not (pano_image_dir / name).is_file()
+        name for name in pano_image_names if not (pano_image_dir / name).is_file()
     ]
     if missing_images:
         preview = ", ".join(missing_images[:5])
-        suffix = f" (and {len(missing_images) - 5} more)" if len(missing_images) > 5 else ""
-        raise SystemExit(f"missing {len(missing_images)} registered panorama images: {preview}{suffix}")
+        suffix = (
+            f" (and {len(missing_images) - 5} more)" if len(missing_images) > 5 else ""
+        )
+        raise SystemExit(
+            f"missing {len(missing_images)} registered panorama images: {preview}{suffix}"
+        )
     source_mask_dir = (
         require_complete_mask_set(pano_image_names, args.run / "colmap_masks")
         if args.use_input_masks
         else None
     )
+    render_options = PANO_RENDER_OPTIONS[args.render_type]
+    expected_image_names = virtual_image_names(pano_image_names, render_options)
+    removed_images = prune_generated_files(image_dir, expected_image_names)
+    removed_masks = prune_generated_files(
+        mask_dir,
+        {f"{image_name}.png" for image_name in expected_image_names},
+    )
+    if removed_images or removed_masks:
+        print(
+            f"removed stale PINHOLE outputs: images={removed_images} masks={removed_masks}",
+            flush=True,
+        )
 
-    print(f"rendering PINHOLE images from {len(pano_image_names)} panoramas", flush=True)
+    print(
+        f"rendering PINHOLE images from {len(pano_image_names)} panoramas", flush=True
+    )
     processor = render_perspective_images(
         pycolmap,
         pano_image_names,
@@ -231,7 +244,7 @@ def export_pinhole_3dgs(args: argparse.Namespace) -> Path:
         image_dir,
         mask_dir,
         source_mask_dir,
-        PANO_RENDER_OPTIONS[args.render_type],
+        render_options,
         "pinhole",
         args.workers,
         args.rerender,
@@ -243,6 +256,8 @@ def export_pinhole_3dgs(args: argparse.Namespace) -> Path:
         processor,
         args.min_track_length,
     )
-    write_reconstruction_pair(pinhole_rec, sparse_dir / "0", output_path / "sparse_txt" / "0")
+    write_reconstruction_pair(
+        pinhole_rec, sparse_dir / "0", output_path / "sparse_txt" / "0"
+    )
     print(f"done: {output_path}", flush=True)
     return output_path

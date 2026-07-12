@@ -293,7 +293,7 @@ def read_toml_config(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise SystemExit(f"config file not found: {path}")
     try:
-        data = tomllib.loads(path.read_text())
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise SystemExit(f"invalid TOML config {path}: {exc}") from exc
     return _flatten_config(data)
@@ -325,13 +325,15 @@ def _apply_mapping(settings: Settings, values: dict[str, Any]) -> Settings:
 
 def _convert_value(field_name: str, value: Any) -> Any:
     if value in ("", None):
-        return None if field_name in PATH_FIELDS or field_name == "sam3_prompts" else value
+        return (
+            None if field_name in PATH_FIELDS or field_name == "sam3_prompts" else value
+        )
     if field_name in PATH_FIELDS:
         return Path(value)
     if field_name in BOOL_FIELDS:
-        return _parse_bool(value)
+        return _parse_bool(field_name, value)
     if field_name == "mask_heuristics":
-        return _parse_bool_or_none(value)
+        return _parse_bool_or_none(field_name, value)
     if field_name in INT_FIELDS:
         return int(value)
     if field_name in FLOAT_FIELDS:
@@ -343,13 +345,18 @@ def _convert_value(field_name: str, value: Any) -> Any:
     return str(value) if isinstance(value, Path) else value
 
 
-def _parse_bool(value: Any) -> bool:
+def _parse_bool(field_name: str, value: Any) -> bool:
     if isinstance(value, bool):
         return value
-    return str(value).lower() in {"1", "true", "yes", "on"}
+    lowered = str(value).strip().lower()
+    if lowered in {"1", "true", "yes", "on"}:
+        return True
+    if lowered in {"0", "false", "no", "off"}:
+        return False
+    raise SystemExit(f"invalid boolean for {field_name}: {value!r}")
 
 
-def _parse_bool_or_none(value: Any) -> bool | None:
+def _parse_bool_or_none(field_name: str, value: Any) -> bool | None:
     if value is None:
         return None
     if isinstance(value, bool):
@@ -357,7 +364,7 @@ def _parse_bool_or_none(value: Any) -> bool | None:
     lowered = str(value).lower()
     if lowered in {"", "auto", "none"}:
         return None
-    return lowered in {"1", "true", "yes", "on"}
+    return _parse_bool(field_name, value)
 
 
 def _parse_box_value(value: Any) -> tuple[float, float, float, float]:

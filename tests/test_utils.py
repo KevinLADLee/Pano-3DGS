@@ -5,8 +5,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from pano_3dgs.panorama_sfm import require_complete_mask_set
-from pano_3dgs.utils import choose_worker_count, link_or_copy_file
+from pano_3dgs.utils import (
+    choose_worker_count,
+    link_or_copy_file,
+    prune_generated_files,
+    require_complete_mask_set,
+)
 
 
 class LinkOrCopyFileTests(unittest.TestCase):
@@ -45,7 +49,9 @@ class LinkOrCopyFileTests(unittest.TestCase):
 
             with (
                 mock.patch("pano_3dgs.utils.sys.platform", "linux"),
-                mock.patch("pano_3dgs.utils.os.link", side_effect=OSError("cross-device link")),
+                mock.patch(
+                    "pano_3dgs.utils.os.link", side_effect=OSError("cross-device link")
+                ),
                 mock.patch("pano_3dgs.utils.shutil.copy2") as copy_file,
             ):
                 with self.assertRaisesRegex(OSError, "cross-device"):
@@ -92,6 +98,25 @@ class CompleteMaskSetTests(unittest.TestCase):
                     ["frame_0001.jpg", "frame_0002.jpg"],
                     mask_dir,
                 )
+
+
+class PruneGeneratedFilesTests(unittest.TestCase):
+    def test_removes_stale_files_and_empty_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            current = root / "camera0" / "current.jpg"
+            stale = root / "camera1" / "stale.jpg"
+            current.parent.mkdir()
+            stale.parent.mkdir()
+            current.write_bytes(b"current")
+            stale.write_bytes(b"stale")
+
+            removed = prune_generated_files(root, {"camera0/current.jpg"})
+
+            self.assertEqual(removed, 1)
+            self.assertTrue(current.exists())
+            self.assertFalse(stale.exists())
+            self.assertFalse(stale.parent.exists())
 
 
 if __name__ == "__main__":

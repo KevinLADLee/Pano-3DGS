@@ -394,7 +394,9 @@ uv run pano-3dgs panorama-sfm \
 ## Rebuild Controls
 
 Existing perspective images, masks, features, and matches are reused when
-possible.
+possible. Database reuse validates both the camera model and the complete image
+set. Perspective outputs also store `render_config.json`; changing the render
+geometry or input-mask mode triggers an automatic rerender.
 
 ```bash
 uv run pano-3dgs equirect-sfm --run "$RUN" --rerun-equirect-features
@@ -408,8 +410,10 @@ uv run pano-3dgs panorama-sfm --run "$RUN" --rerun-panorama-matching
 uv run pano-3dgs panorama-sfm --run "$RUN" --clean-panorama-sfm
 ```
 
-Use the corresponding `--clean-*` flag after changing camera model, render
-settings, feature type, matcher type, or major mask settings.
+`--rerun-*-matching` preserves existing features and clears only match tables.
+Use `--rerun-*-features` after changing the feature model or feature masks, and
+`--rerun-*-matching` after changing matcher settings. Use `--clean-*` only when
+the complete generated workspace should be rebuilt.
 
 ## Troubleshooting
 

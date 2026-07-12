@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import sys
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,6 +13,7 @@ import psutil
 
 
 _GIB = 1024**3
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"}
 
 
 @dataclass(frozen=True)
@@ -64,6 +66,47 @@ def parse_list(value: str | list[str]) -> list[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
 
 
+def require_complete_mask_set(image_names: Sequence[str], mask_dir: Path) -> Path:
+    if not mask_dir.is_dir():
+        raise SystemExit(
+            f"input masks were requested, but the mask directory does not exist: {mask_dir}"
+        )
+    missing = [
+        image_name
+        for image_name in image_names
+        if not (mask_dir / f"{image_name}.png").is_file()
+    ]
+    if missing:
+        preview = ", ".join(missing[:5])
+        suffix = f" (and {len(missing) - 5} more)" if len(missing) > 5 else ""
+        raise SystemExit(
+            f"missing {len(missing)} input masks in {mask_dir}: {preview}{suffix}"
+        )
+    return mask_dir
+
+
+def prune_generated_files(root: Path, expected_relative_paths: Collection[str]) -> int:
+    if not root.exists():
+        return 0
+    expected = {Path(path).as_posix() for path in expected_relative_paths}
+    removed = 0
+    for path in root.rglob("*"):
+        if path.is_file() and path.relative_to(root).as_posix() not in expected:
+            path.unlink()
+            removed += 1
+    directories = sorted(
+        (path for path in root.rglob("*") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+    for directory in directories:
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
+    return removed
+
+
 def default_scene_name(video: Path) -> str:
     scene = re.sub(r"[^A-Za-z0-9_.-]+", "_", video.stem).strip("_.-")
     return scene or "scene"
@@ -94,11 +137,16 @@ def choose_worker_count(
 
     logical_cpus = psutil.cpu_count(logical=True) or os.cpu_count() or 1
     cpu_limit = max(1, logical_cpus - 1)
-    platform_limit = windows_max_auto_workers if sys.platform == "win32" else max_auto_workers
+    platform_limit = (
+        windows_max_auto_workers if sys.platform == "win32" else max_auto_workers
+    )
     cpu_workers = max(1, min(cpu_limit, platform_limit, max_auto_workers, item_count))
 
     available_memory = psutil.virtual_memory().available
-    usable_memory = max(0, int((available_memory - min_available_memory_bytes - shared_memory_bytes) * memory_fraction))
+    reservable_memory = (
+        available_memory - min_available_memory_bytes - shared_memory_bytes
+    )
+    usable_memory = max(0, int(reservable_memory * memory_fraction))
     if estimated_per_worker_bytes > 0:
         memory_workers = max(1, usable_memory // estimated_per_worker_bytes)
     else:

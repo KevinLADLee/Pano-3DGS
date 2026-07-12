@@ -333,7 +333,9 @@ uv run pano-3dgs panorama-sfm \
 
 ## 重建缓存控制
 
-已有 perspective images、masks、features、matches 会尽量复用。
+已有 perspective images、masks、features、matches 会尽量复用。数据库复用前会
+同时校验相机模型和完整图片集合。Perspective 输出还会记录 `render_config.json`；
+修改渲染几何参数或输入 mask 模式时会自动重新渲染。
 
 ```bash
 uv run pano-3dgs equirect-sfm --run "$RUN" --rerun-equirect-features
@@ -347,8 +349,9 @@ uv run pano-3dgs panorama-sfm --run "$RUN" --rerun-panorama-matching
 uv run pano-3dgs panorama-sfm --run "$RUN" --clean-panorama-sfm
 ```
 
-修改 feature/matcher、render settings、camera model 或主要 mask 设置后，使用
-对应的 `--clean-*` 参数。
+`--rerun-*-matching` 会保留已有 features，只清空 match 表。修改 feature 模型或
+feature mask 后使用 `--rerun-*-features`；修改 matcher 设置后使用
+`--rerun-*-matching`。只有需要完整重建生成目录时才使用 `--clean-*`。
 
 ## 故障排查
 
