@@ -1,12 +1,53 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import shutil
+import sys
+from collections.abc import Collection, Sequence
+from dataclasses import dataclass
 from pathlib import Path
+
+import psutil
+
+
+_GIB = 1024**3
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"}
+
+
+@dataclass(frozen=True)
+class WorkerChoice:
+    workers: int
+    reason: str
 
 
 def ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
+
+
+def link_or_copy_file(source: Path, destination: Path) -> str:
+    ensure_dir(destination.parent)
+    if destination.exists():
+        try:
+            if source.samefile(destination):
+                return "existing"
+        except OSError:
+            pass
+        source_stat = source.stat()
+        destination_stat = destination.stat()
+        if (
+            source_stat.st_size == destination_stat.st_size
+            and source_stat.st_mtime_ns == destination_stat.st_mtime_ns
+        ):
+            return "existing"
+    if sys.platform == "win32":
+        shutil.copy2(source, destination)
+        return "copied"
+    if destination.exists():
+        destination.unlink()
+    os.link(source, destination)
+    return "linked"
 
 
 def parse_box(value: str) -> tuple[float, float, float, float]:
@@ -25,6 +66,47 @@ def parse_list(value: str | list[str]) -> list[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
 
 
+def require_complete_mask_set(image_names: Sequence[str], mask_dir: Path) -> Path:
+    if not mask_dir.is_dir():
+        raise SystemExit(
+            f"input masks were requested, but the mask directory does not exist: {mask_dir}"
+        )
+    missing = [
+        image_name
+        for image_name in image_names
+        if not (mask_dir / f"{image_name}.png").is_file()
+    ]
+    if missing:
+        preview = ", ".join(missing[:5])
+        suffix = f" (and {len(missing) - 5} more)" if len(missing) > 5 else ""
+        raise SystemExit(
+            f"missing {len(missing)} input masks in {mask_dir}: {preview}{suffix}"
+        )
+    return mask_dir
+
+
+def prune_generated_files(root: Path, expected_relative_paths: Collection[str]) -> int:
+    if not root.exists():
+        return 0
+    expected = {Path(path).as_posix() for path in expected_relative_paths}
+    removed = 0
+    for path in root.rglob("*"):
+        if path.is_file() and path.relative_to(root).as_posix() not in expected:
+            path.unlink()
+            removed += 1
+    directories = sorted(
+        (path for path in root.rglob("*") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+    for directory in directories:
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
+    return removed
+
+
 def default_scene_name(video: Path) -> str:
     scene = re.sub(r"[^A-Za-z0-9_.-]+", "_", video.stem).strip("_.-")
     return scene or "scene"
@@ -33,3 +115,49 @@ def default_scene_name(video: Path) -> str:
 def scene_run_dir(runs_dir: Path, scene: str, rate_hz: float, width: int) -> Path:
     rate = f"{rate_hz:g}hz".replace(".", "p")
     return runs_dir / f"{scene}_{rate}_{width}"
+
+
+def choose_worker_count(
+    requested_workers: int,
+    item_count: int,
+    *,
+    estimated_per_worker_bytes: int,
+    shared_memory_bytes: int = 0,
+    max_auto_workers: int = 32,
+    windows_max_auto_workers: int = 4,
+    memory_fraction: float = 0.65,
+    min_available_memory_bytes: int = _GIB,
+) -> WorkerChoice:
+    if item_count <= 0:
+        return WorkerChoice(1, "no work items")
+
+    if requested_workers > 0:
+        workers = max(1, min(requested_workers, item_count))
+        return WorkerChoice(workers, f"manual request={requested_workers}")
+
+    logical_cpus = psutil.cpu_count(logical=True) or os.cpu_count() or 1
+    cpu_limit = max(1, logical_cpus - 1)
+    platform_limit = (
+        windows_max_auto_workers if sys.platform == "win32" else max_auto_workers
+    )
+    cpu_workers = max(1, min(cpu_limit, platform_limit, max_auto_workers, item_count))
+
+    available_memory = psutil.virtual_memory().available
+    reservable_memory = (
+        available_memory - min_available_memory_bytes - shared_memory_bytes
+    )
+    usable_memory = max(0, int(reservable_memory * memory_fraction))
+    if estimated_per_worker_bytes > 0:
+        memory_workers = max(1, usable_memory // estimated_per_worker_bytes)
+    else:
+        memory_workers = cpu_workers
+    memory_workers = max(1, min(memory_workers, item_count))
+
+    workers = max(1, min(cpu_workers, memory_workers))
+    reason = (
+        f"auto cpu={logical_cpus}, cpu_limit={cpu_workers}, "
+        f"available_mem={available_memory / _GIB:.1f}GiB, "
+        f"estimated_worker_mem={estimated_per_worker_bytes / _GIB:.1f}GiB, "
+        f"memory_limit={memory_workers}"
+    )
+    return WorkerChoice(workers, reason)

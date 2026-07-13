@@ -1,9 +1,13 @@
 .venv/
+.uv-cache/
+.uv-python/
+.modelscope/
 .env
 pano3dgs.toml
 pano-3dgs.toml
 __pycache__/
 *.pyc
 runs/
+raw_video/
 models/
 *.egg-info/

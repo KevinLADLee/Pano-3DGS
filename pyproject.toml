@@ -11,14 +11,35 @@ dependencies = [
   "pillow",
   "psutil",
   "pycocotools",
+  "pycolmap; (sys_platform == 'linux' and platform_machine == 'x86_64') or sys_platform == 'win32'",
   "sam3",
   "setuptools<81",
-  "torch==2.10.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
-  "torchvision==0.25.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torch==2.10.0; (sys_platform == 'linux' and platform_machine == 'x86_64') or sys_platform == 'win32'",
+  "torchvision==0.25.0; (sys_platform == 'linux' and platform_machine == 'x86_64') or sys_platform == 'win32'",
+  "triton-windows==3.7.1.post27; sys_platform == 'win32'",
 ]
 
 [tool.uv.sources]
 sam3 = { path = "third_party/sam3", editable = true }
+torch = { index = "pytorch-cu128", marker = "(sys_platform == 'linux' and platform_machine == 'x86_64') or sys_platform == 'win32'" }
+torchvision = { index = "pytorch-cu128", marker = "(sys_platform == 'linux' and platform_machine == 'x86_64') or sys_platform == 'win32'" }
+pycolmap = [
+  { url = "https://github.com/lyehe/build_gpu_colmap/releases/download/v4.1.0/pycolmap-4.1.0+cuda.cudss-cp310-cp310-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.10'" },
+  { url = "https://github.com/lyehe/build_gpu_colmap/releases/download/v4.1.0/pycolmap-4.1.0+cuda.cudss-cp311-cp311-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.11'" },
+  { url = "https://github.com/lyehe/build_gpu_colmap/releases/download/v4.1.0/pycolmap-4.1.0+cuda.cudss-cp312-cp312-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.12'" },
+  { url = "https://github.com/lyehe/build_gpu_colmap/releases/download/v4.1.0/pycolmap-4.1.0+cuda.cudss-cp313-cp313-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.13'" },
+  { url = "https://github.com/lyehe/build_gpu_colmap/releases/download/v4.1.0/pycolmap-4.1.0+cuda.cudss-cp314-cp314-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.14'" },
+  { url = "https://github.com/lyehe/build_gpu_colmap/releases/download/v4.1.0/pycolmap-4.1.0+cu128.bundled.cudss-cp310-cp310-manylinux_2_35_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.10'" },
+  { url = "https://github.com/lyehe/build_gpu_colmap/releases/download/v4.1.0/pycolmap-4.1.0+cu128.bundled.cudss-cp311-cp311-manylinux_2_35_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.11'" },
+  { url = "https://github.com/lyehe/build_gpu_colmap/releases/download/v4.1.0/pycolmap-4.1.0+cu128.bundled.cudss-cp312-cp312-manylinux_2_35_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.12'" },
+  { url = "https://github.com/lyehe/build_gpu_colmap/releases/download/v4.1.0/pycolmap-4.1.0+cu128.bundled.cudss-cp313-cp313-manylinux_2_35_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.13'" },
+  { url = "https://github.com/lyehe/build_gpu_colmap/releases/download/v4.1.0/pycolmap-4.1.0+cu128.bundled.cudss-cp314-cp314-manylinux_2_35_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64' and python_version == '3.14'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
 [project.scripts]
 pano-3dgs = "pano_3dgs.cli:main"

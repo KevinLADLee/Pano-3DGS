@@ -4,10 +4,19 @@ import argparse
 from pathlib import Path
 
 from pano_3dgs.config import Settings, find_cli_config, load_settings
+from pano_3dgs.equirect_sfm import run_equirect_sfm
+from pano_3dgs.export_pinhole_3dgs import export_pinhole_3dgs
 from pano_3dgs.extract import extract_sharpest
+from pano_3dgs.panorama_sfm import run_panorama_sfm
+from pano_3dgs.pycolmap_release import (
+    DEFAULT_PYCOLMAP_VERSION,
+    DEFAULT_RELEASE_API_URL,
+    DEFAULT_RELEASE_DOWNLOAD_BASE,
+    install_pycolmap,
+)
 from pano_3dgs.sam3_masks import make_colmap_masks, run_sam3
 from pano_3dgs.utils import parse_box, parse_list
-from pano_3dgs.workflow import run_all, run_panorama_sfm_workflow
+from pano_3dgs.workflow import run_all
 
 
 def add_config_option(parser: argparse.ArgumentParser) -> None:
@@ -26,6 +35,24 @@ def add_sfm_options(parser: argparse.ArgumentParser, settings: Settings) -> None
     parser.add_argument("--gpu-index", default=settings.gpu_index)
     parser.add_argument("--threads", type=int, default=settings.threads)
     parser.add_argument("--max-features", type=int, default=settings.max_features)
+    parser.add_argument(
+        "--feature-type",
+        choices=["sift", "aliked_n16rot", "aliked_n32"],
+        default=settings.feature_type,
+    )
+    parser.add_argument(
+        "--feature-matcher",
+        choices=["auto", "sift_bruteforce", "aliked_bruteforce", "aliked_lightglue"],
+        default=settings.feature_matcher,
+    )
+    parser.add_argument(
+        "--aliked-model-path", type=Path, default=settings.aliked_model_path
+    )
+    parser.add_argument(
+        "--aliked-matcher-model-path",
+        type=Path,
+        default=settings.aliked_matcher_model_path,
+    )
     parser.add_argument("--overlap", type=int, default=settings.overlap)
 
 
@@ -36,20 +63,32 @@ def add_extract_options(parser: argparse.ArgumentParser, settings: Settings) -> 
     add_extract_options_no_video(parser, settings)
 
 
-def add_extract_options_no_video(parser: argparse.ArgumentParser, settings: Settings) -> None:
+def add_extract_options_no_video(
+    parser: argparse.ArgumentParser, settings: Settings
+) -> None:
     parser.add_argument("--scale-width", type=int, default=settings.scale_width)
     parser.add_argument("--roi", type=parse_box, default=settings.roi)
     parser.add_argument("--fallback-fps", type=float, default=settings.fallback_fps)
-    parser.add_argument("--frame-jpg-quality", type=int, default=settings.frame_jpg_quality)
+    parser.add_argument(
+        "--frame-jpg-quality", type=int, default=settings.frame_jpg_quality
+    )
     parser.add_argument("--max-windows", type=int)
     parser.add_argument("--progress", type=int, default=settings.progress)
 
 
 def add_mask_options(parser: argparse.ArgumentParser, settings: Settings) -> None:
-    parser.add_argument("--dynamic-mask-dir", type=Path, default=settings.dynamic_mask_dir)
-    parser.add_argument("--mask-heuristics", action=argparse.BooleanOptionalAction, default=settings.mask_heuristics)
+    parser.add_argument(
+        "--dynamic-mask-dir", type=Path, default=settings.dynamic_mask_dir
+    )
+    parser.add_argument(
+        "--mask-heuristics",
+        action=argparse.BooleanOptionalAction,
+        default=settings.mask_heuristics,
+    )
     parser.add_argument("--mask-progress", type=int, default=settings.mask_progress)
-    parser.add_argument("--sky-mask", action=argparse.BooleanOptionalAction, default=settings.sky_mask)
+    parser.add_argument(
+        "--sky-mask", action=argparse.BooleanOptionalAction, default=settings.sky_mask
+    )
     parser.add_argument("--zenith-mask", type=float, default=settings.zenith_mask)
     parser.add_argument("--nadir-mask", type=float, default=settings.nadir_mask)
 
@@ -57,9 +96,15 @@ def add_mask_options(parser: argparse.ArgumentParser, settings: Settings) -> Non
 def add_sam3_options(parser: argparse.ArgumentParser, settings: Settings) -> None:
     parser.add_argument("--sam3-model", type=Path, default=settings.sam3_model)
     parser.add_argument("--device", default=settings.device)
-    parser.add_argument("--dtype", choices=["auto", "float32", "float16", "bfloat16"], default=settings.dtype)
+    parser.add_argument(
+        "--dtype",
+        choices=["auto", "float32", "float16", "bfloat16"],
+        default=settings.dtype,
+    )
     parser.add_argument("--prompt", action="append")
-    parser.add_argument("--sam3-prompts", type=parse_list, default=settings.resolved_sam3_prompts)
+    parser.add_argument(
+        "--sam3-prompts", type=parse_list, default=settings.resolved_sam3_prompts
+    )
     parser.add_argument("--sam3-roi", type=parse_box, action="append", default=[])
     parser.add_argument("--score", type=float, default=settings.score)
     parser.add_argument("--min-area", type=float, default=settings.min_area)
@@ -67,11 +112,15 @@ def add_sam3_options(parser: argparse.ArgumentParser, settings: Settings) -> Non
     parser.add_argument("--dilate", type=int, default=settings.dilate)
 
 
-def add_pycolmap_path_option(parser: argparse.ArgumentParser, settings: Settings) -> None:
+def add_pycolmap_path_option(
+    parser: argparse.ArgumentParser, settings: Settings
+) -> None:
     parser.add_argument("--pycolmap-path", type=Path, default=settings.pycolmap_path)
 
 
-def add_pycolmap_options(parser: argparse.ArgumentParser, settings: Settings, *, cuda_default: bool) -> None:
+def add_pycolmap_options(
+    parser: argparse.ArgumentParser, settings: Settings, *, cuda_default: bool
+) -> None:
     add_pycolmap_path_option(parser, settings)
     parser.add_argument(
         "--require-pycolmap-cuda",
@@ -80,9 +129,13 @@ def add_pycolmap_options(parser: argparse.ArgumentParser, settings: Settings, *,
     )
 
 
-def add_panorama_sfm_options(parser: argparse.ArgumentParser, settings: Settings) -> None:
+def add_panorama_sfm_options(
+    parser: argparse.ArgumentParser, settings: Settings
+) -> None:
     add_pycolmap_options(parser, settings, cuda_default=True)
-    parser.add_argument("--panorama-sfm-output", type=Path, default=settings.panorama_sfm_output)
+    parser.add_argument(
+        "--panorama-sfm-output", type=Path, default=settings.panorama_sfm_output
+    )
     parser.add_argument(
         "--pano-render-type",
         choices=["perspective_overlapping", "perspective_non_overlapping"],
@@ -113,8 +166,14 @@ def add_panorama_sfm_options(parser: argparse.ArgumentParser, settings: Settings
         action=argparse.BooleanOptionalAction,
         default=settings.panorama_loop_detection,
     )
-    parser.add_argument("--panorama-vocab-tree-path", type=Path, default=settings.panorama_vocab_tree_path)
-    parser.add_argument("--panorama-workers", type=int, default=settings.panorama_workers)
+    parser.add_argument(
+        "--panorama-vocab-tree-path",
+        type=Path,
+        default=settings.panorama_vocab_tree_path,
+    )
+    parser.add_argument(
+        "--panorama-workers", type=int, default=settings.panorama_workers
+    )
     parser.add_argument(
         "--panorama-use-input-masks",
         action=argparse.BooleanOptionalAction,
@@ -139,6 +198,126 @@ def add_panorama_sfm_options(parser: argparse.ArgumentParser, settings: Settings
         "--clean-panorama-sfm",
         action=argparse.BooleanOptionalAction,
         default=settings.clean_panorama_sfm,
+    )
+
+
+def add_equirect_sfm_options(
+    parser: argparse.ArgumentParser,
+    settings: Settings,
+    *,
+    include_pycolmap_options: bool = True,
+) -> None:
+    if include_pycolmap_options:
+        add_pycolmap_options(parser, settings, cuda_default=True)
+    parser.add_argument(
+        "--equirect-sfm-output", type=Path, default=settings.equirect_sfm_output
+    )
+    parser.add_argument(
+        "--equirect-matcher",
+        choices=["sequential", "exhaustive", "vocabtree", "spatial"],
+        default=settings.equirect_matcher,
+    )
+    parser.add_argument(
+        "--equirect-mapper",
+        choices=["incremental", "global"],
+        default=settings.equirect_mapper,
+    )
+    parser.add_argument(
+        "--equirect-ba-backend",
+        choices=["ceres", "caspar"],
+        default=settings.equirect_ba_backend,
+    )
+    parser.add_argument(
+        "--equirect-loop-detection",
+        action=argparse.BooleanOptionalAction,
+        default=settings.equirect_loop_detection,
+    )
+    parser.add_argument(
+        "--equirect-vocab-tree-path",
+        type=Path,
+        default=settings.equirect_vocab_tree_path,
+    )
+    parser.add_argument(
+        "--equirect-use-input-masks",
+        action=argparse.BooleanOptionalAction,
+        default=settings.equirect_use_input_masks,
+    )
+    parser.add_argument(
+        "--rerun-equirect-features",
+        action=argparse.BooleanOptionalAction,
+        default=settings.rerun_equirect_features,
+    )
+    parser.add_argument(
+        "--rerun-equirect-matching",
+        action=argparse.BooleanOptionalAction,
+        default=settings.rerun_equirect_matching,
+    )
+    parser.add_argument(
+        "--clean-equirect-sfm",
+        action=argparse.BooleanOptionalAction,
+        default=settings.clean_equirect_sfm,
+    )
+
+
+def add_pinhole_3dgs_options(
+    parser: argparse.ArgumentParser,
+    settings: Settings,
+    *,
+    include_enabled: bool = False,
+    include_pycolmap_options: bool = True,
+) -> None:
+    if include_enabled:
+        parser.add_argument(
+            "--export-pinhole-3dgs",
+            action=argparse.BooleanOptionalAction,
+            default=settings.export_pinhole_3dgs,
+        )
+    if include_pycolmap_options:
+        add_pycolmap_path_option(parser, settings)
+    parser.add_argument(
+        "--pinhole-3dgs-output",
+        dest="output",
+        type=Path,
+        default=settings.pinhole_3dgs_output,
+    )
+    parser.add_argument(
+        "--input-sparse", type=Path, default=settings.pinhole_3dgs_input_sparse
+    )
+    parser.add_argument(
+        "--pinhole-render-type",
+        dest="render_type",
+        choices=["perspective_overlapping", "perspective_non_overlapping"],
+        default=settings.pinhole_3dgs_render_type,
+    )
+    parser.add_argument(
+        "--pinhole-workers",
+        dest="workers",
+        type=int,
+        default=settings.pinhole_3dgs_workers,
+    )
+    parser.add_argument(
+        "--pinhole-use-input-masks",
+        dest="use_input_masks",
+        action=argparse.BooleanOptionalAction,
+        default=settings.pinhole_3dgs_use_input_masks,
+    )
+    parser.add_argument(
+        "--rerender-pinhole",
+        dest="rerender",
+        action=argparse.BooleanOptionalAction,
+        default=settings.pinhole_3dgs_rerender,
+    )
+    parser.add_argument(
+        "--pinhole-min-track-length",
+        dest="min_track_length",
+        type=int,
+        default=settings.pinhole_3dgs_min_track_length,
+    )
+    parser.add_argument(
+        "--clean-pinhole-3dgs",
+        dest="clean",
+        action=argparse.BooleanOptionalAction,
+        default=settings.clean_pinhole_3dgs,
     )
 
 
@@ -178,7 +357,57 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     add_common_run(p)
     add_sfm_options(p, settings)
     add_panorama_sfm_options(p, settings)
-    p.set_defaults(func=run_panorama_sfm_workflow)
+    p.set_defaults(func=run_panorama_sfm)
+
+    p = sub.add_parser("equirect-sfm")
+    add_config_option(p)
+    add_common_run(p)
+    add_sfm_options(p, settings)
+    add_equirect_sfm_options(p, settings)
+    p.set_defaults(func=run_equirect_sfm)
+
+    p = sub.add_parser("export-pinhole-3dgs")
+    add_config_option(p)
+    add_common_run(p)
+    add_pinhole_3dgs_options(p, settings)
+    p.set_defaults(func=export_pinhole_3dgs)
+
+    p = sub.add_parser("install-pycolmap")
+    add_config_option(p)
+    p.add_argument("--release-api-url", default=DEFAULT_RELEASE_API_URL)
+    p.add_argument("--release-download-base", default=DEFAULT_RELEASE_DOWNLOAD_BASE)
+    p.add_argument("--pycolmap-version", default=DEFAULT_PYCOLMAP_VERSION)
+    p.add_argument(
+        "--variant",
+        choices=[
+            "auto",
+            "cpu",
+            "cuda",
+            "cuda.cudss",
+            "cu128.bundled",
+            "cu128.bundled.cudss",
+            "cu130.bundled",
+            "cu130.bundled.cudss",
+            "cu131.bundled",
+            "cu131.bundled.cudss",
+        ],
+        default="auto",
+        help="PyCOLMAP wheel variant. auto selects cuda.cudss on Windows and cu128.bundled.cudss on Linux.",
+    )
+    p.add_argument("--python-tag", help="override Python ABI tag, e.g. cp312")
+    p.add_argument("--platform-tag", help="override wheel platform tag, e.g. win_amd64")
+    p.add_argument("--installer", choices=["uv", "pip"], default="uv")
+    p.add_argument(
+        "--print-only",
+        action="store_true",
+        help="print the selected wheel URL without installing",
+    )
+    p.add_argument(
+        "--check-release-assets",
+        action="store_true",
+        help="query GitHub release assets before installing",
+    )
+    p.set_defaults(func=install_pycolmap)
 
     p = sub.add_parser("run")
     add_config_option(p)
@@ -188,12 +417,21 @@ def build_parser(settings: Settings) -> argparse.ArgumentParser:
     p.add_argument("--rate-hz", type=float, default=settings.rate_hz)
     p.add_argument("--equirect-width", type=int, default=settings.equirect_width)
     p.add_argument("--equirect-height", type=int, default=settings.equirect_height)
+    p.add_argument(
+        "--sfm-workflow",
+        choices=["equirect", "panorama"],
+        default=settings.sfm_workflow,
+    )
     add_extract_options_no_video(p, settings)
     add_mask_options(p, settings)
     add_sam3_options(p, settings)
     p.add_argument("--skip-sam3", action="store_true", default=settings.skip_sam3)
     add_sfm_options(p, settings)
     add_panorama_sfm_options(p, settings)
+    add_equirect_sfm_options(p, settings, include_pycolmap_options=False)
+    add_pinhole_3dgs_options(
+        p, settings, include_enabled=True, include_pycolmap_options=False
+    )
     p.set_defaults(func=run_all)
 
     return parser

@@ -8,6 +8,7 @@ runs_dir = "runs"
 rate_hz = 2.0
 equirect_width = 7680
 equirect_height = 3840
+sfm_workflow = "equirect"
 
 [extract]
 window_seconds = 0.5
@@ -21,6 +22,12 @@ progress = 300
 gpu_index = "0"
 threads = 8
 max_features = 12000
+feature_type = "sift"
+feature_matcher = "auto"
+# aliked_model_path = "models/colmap/aliked-n16rot.onnx"
+# feature_type = "aliked_n16rot"
+# feature_matcher = "aliked_lightglue"
+# aliked_matcher_model_path = "models/colmap/aliked-lightglue.onnx"
 overlap = 25
 
 [pycolmap]
@@ -30,7 +37,7 @@ require_cuda = true
 model = "models/facebook/sam3"
 device = "cuda:0"
 dtype = "bfloat16"
-prompts = ["sky", "person", "people", "camera", "tripod", "selfie stick", "phone"]
+prompts = ["sky"]
 skip = false
 score = 0.35
 min_area = 0.00005
@@ -56,4 +63,23 @@ use_input_masks = true
 rerender_perspective = false
 rerun_features = false
 rerun_matching = false
+clean = false
+
+[equirect_sfm]
+matcher = "sequential"
+mapper = "incremental"
+ba_backend = "caspar"
+loop_detection = false
+use_input_masks = true
+rerun_features = false
+rerun_matching = false
+clean = false
+
+[pinhole_3dgs]
+enabled = true
+render_type = "perspective_overlapping"
+workers = 0
+use_input_masks = true
+rerender = false
+min_track_length = 2
 clean = false

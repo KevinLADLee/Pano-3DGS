@@ -27,6 +27,7 @@ def crop_roi(gray: np.ndarray, roi: tuple[float, float, float, float]) -> np.nda
         int(round(x0 * width)) : int(round(x1 * width)),
     ]
 
+
 def sharpness_score(
     frame: np.ndarray,
     scale_width: int,
@@ -42,6 +43,7 @@ def sharpness_score(
         )
     lap = cv2.Laplacian(crop_roi(gray, roi), cv2.CV_64F)
     return float(lap.var())
+
 
 def extract_sharpest(args: argparse.Namespace) -> None:
     out_dir = args.run / "frames"
@@ -68,7 +70,15 @@ def extract_sharpest(args: argparse.Namespace) -> None:
     selected = 0
     best: Candidate | None = None
     current_window = 0
-    fieldnames = ["video", "output", "sequence_index", "frame_index", "timestamp", "score", "window_index"]
+    fieldnames = [
+        "video",
+        "output",
+        "sequence_index",
+        "frame_index",
+        "timestamp",
+        "score",
+        "window_index",
+    ]
 
     with csv_path.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -80,7 +90,15 @@ def extract_sharpest(args: argparse.Namespace) -> None:
                 break
             window_index = frame_index // chunk_size
             if window_index != current_window:
-                selected = _write_candidate(args.video, out_dir, writer, selected, best, current_window, args.frame_jpg_quality)
+                selected = _write_candidate(
+                    args.video,
+                    out_dir,
+                    writer,
+                    selected,
+                    best,
+                    current_window,
+                    args.frame_jpg_quality,
+                )
                 best = None
                 current_window = window_index
 
@@ -93,10 +111,19 @@ def extract_sharpest(args: argparse.Namespace) -> None:
             if args.progress and frame_index % args.progress == 0:
                 print(f"  processed={frame_index}, selected={selected}", flush=True)
 
-        selected = _write_candidate(args.video, out_dir, writer, selected, best, current_window, args.frame_jpg_quality)
+        selected = _write_candidate(
+            args.video,
+            out_dir,
+            writer,
+            selected,
+            best,
+            current_window,
+            args.frame_jpg_quality,
+        )
 
     cap.release()
     print(f"done: selected={selected}, csv={csv_path}", flush=True)
+
 
 def _write_candidate(
     video: Path,

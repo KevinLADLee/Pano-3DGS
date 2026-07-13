@@ -6,7 +6,10 @@
 
 `pano-3dgs` 的目标是把已经拼接好的 360 equirectangular MP4 视频转换成标准 COLMAP 数据集，使其可以被常见的 3D Gaussian Splatting 工具导入。
 
-当前推荐输出不是 equirectangular COLMAP 模型，而是从 360 全景帧渲染出来的 perspective `PINHOLE` 模型。常见 3DGS 导入工具和当前 Caspar bundle-adjustment 路径都按普通 `PINHOLE` 相机使用。
+当前有两条 SfM 路线：
+
+- `equirect-sfm`：直接把 2:1 全景帧作为 COLMAP `EQUIRECTANGULAR` 相机重建。这是无人机 360 全景视频的主测路线。
+- `panorama-sfm`：把全景帧渲染成 perspective `PINHOLE` 虚拟 rig 再重建。它更兼容只接受普通 pinhole COLMAP 数据集的 3DGS importer。
 
 ## 推荐工作流
 
@@ -24,6 +27,24 @@ uv run pano-3dgs extract \
 uv run pano-3dgs sam3 \
   --run "$RUN"
 
+uv run pano-3dgs equirect-sfm \
+  --run "$RUN" \
+  --feature-type aliked_n16rot \
+  --feature-matcher aliked_lightglue \
+  --aliked-model-path models/colmap/aliked-n16rot.onnx \
+  --aliked-matcher-model-path models/colmap/aliked-lightglue.onnx \
+  --clean-equirect-sfm
+
+uv run pano-3dgs export-pinhole-3dgs \
+  --run "$RUN" \
+  --clean-pinhole-3dgs
+```
+
+如果要退回 ONNX brute-force matcher，应把 `--feature-matcher` 改为 `aliked_bruteforce`，并把 `--aliked-matcher-model-path` 指向 `bruteforce-matcher.onnx`。
+
+旧的 perspective rig 路线仍然保留：
+
+```bash
 uv run pano-3dgs panorama-sfm \
   --run "$RUN" \
   --clean-panorama-sfm \
@@ -36,7 +57,7 @@ uv run pano-3dgs panorama-sfm \
 
 现在 `sam3` 命令默认会同时写出 `dynamic_masks/` 和合并后的 `colmap_masks/`，所以通常不需要再单独运行 `masks` 命令。
 
-`run` 命令会执行同一条推荐主线：`extract -> sam3/masks -> panorama-sfm`。省略 `--scene` 时，run 目录名来自 MP4 文件名。
+`run` 命令会执行同一条推荐主线：`extract -> sam3/masks -> SfM`。默认 `--sfm-workflow equirect`，即直接运行 `equirect-sfm`，并在 `[pinhole_3dgs].enabled = true` 时继续导出 `pinhole_3dgs/`；需要旧的 perspective rig 路线时显式传入 `--sfm-workflow panorama`。省略 `--scene` 时，run 目录名来自 MP4 文件名。
 
 ## 参数配置
 
@@ -60,12 +81,12 @@ CLI 参数 > TOML 配置 > 内置默认值
 
 持久化参数写在 TOML 中。CLI 参数用于单次命令覆盖。
 
-例如把 Caspar + PINHOLE 的推荐设置写入 `pano3dgs.toml` 后，`panorama-sfm` 可以简化为：
+例如把默认的 equirect SfM 参数写入 `pano3dgs.toml` 后，`equirect-sfm` 可以简化为：
 
 ```bash
-uv run pano-3dgs panorama-sfm \
+uv run pano-3dgs equirect-sfm \
   --run "$RUN" \
-  --clean-panorama-sfm
+  --clean-equirect-sfm
 ```
 
 ## 输出目录
@@ -83,6 +104,17 @@ runs/<video_stem>_2hz_7680/
     *.jpg
   colmap_masks/
     *.jpg.png
+  equirect_sfm/
+    images/
+    masks/
+    database.db
+    sparse/0/
+    sparse_txt/0/
+  pinhole_3dgs/
+    images/
+    masks/
+    sparse/0/
+    sparse_txt/0/
   panorama_sfm/
     images/
       pano_camera0/
@@ -96,7 +128,7 @@ runs/<video_stem>_2hz_7680/
     sparse_equirectangular_txt/0/
 ```
 
-标准 3DGS 导入应使用 `panorama_sfm/images/` 和 `panorama_sfm/sparse/0/`。`sparse_equirectangular` 是把重建结果转换回原始全景帧坐标系后的辅助模型，主要用于检查，或用于明确支持 COLMAP `EQUIRECTANGULAR` 相机模型的工具。
+标准 3DGS 导入优先使用 `pinhole_3dgs/images/` 和 `pinhole_3dgs/sparse/0/`。`equirect_sfm/sparse/0` 保留直接全景重建结果，主要用于检查，或用于明确支持 COLMAP `EQUIRECTANGULAR` 相机模型的工具。`panorama_sfm/` 只在直接运行 `panorama-sfm`，或 `run --sfm-workflow panorama` 时写出。
 
 ## 步骤细节
 
@@ -162,7 +194,7 @@ modelscope download --model facebook/sam3 --local_dir models/facebook/sam3
 
 ModelScope 页面是 [facebook/sam3](https://www.modelscope.cn/models/facebook/sam3/summary)。
 
-默认动态 prompts 针对不应参与稳定三维结构的对象，例如人、相机设备、三脚架、自拍杆和手机。本地 TOML 可以扩展这些 prompts。例如加入 `sky` 可以在天空产生不稳定或不需要的特征时有所帮助，但如果 prompt 过度分割，也可能移除有用的远处背景约束。
+默认 SAM3 prompt 是 `sky`，用于先屏蔽通常不提供稳定几何约束的天空区域。本地 TOML 可以扩展这些 prompts，例如加入人、相机设备、三脚架、自拍杆或手机等动态/采集设备对象。prompt 过宽可能移除有用的远处背景约束，过窄则可能把动态物体留给 SfM。
 
 SAM3 写出的 mask 使用 COLMAP 约定：
 
@@ -179,7 +211,7 @@ black = ignore
 
 mask 合并步骤会优先使用已有 dynamic masks。在 TOML `[masks].heuristics = "auto"` 时，只有缺少 dynamic SAM3 mask 的帧才会使用启发式 mask。如果强制开启 heuristics，则还可以 mask 掉类似明亮天空的顶部区域，以及固定比例的 zenith / nadir 区域。
 
-当前默认策略是保守的：优先使用 SAM3 mask，除非需要 fallback，否则不额外叠加启发式 mask。这样可以保留更多图像内容给 SfM 使用。
+当前默认策略是保守的：优先使用 SAM3 mask，仅在缺少动态 mask 时使用启发式 mask。这样可以保留更多图像内容给 SfM 使用。
 
 ### 4. Perspective Panorama SfM
 
@@ -290,7 +322,7 @@ torchvision==0.25.0
 
 ### PyCOLMAP
 
-推荐工作流依赖 PyCOLMAP，不依赖 COLMAP binary。`panorama-sfm` 要求 CUDA-enabled PyCOLMAP。COLMAP 4.1.0 prebuild 和匹配的 PyCOLMAP wheels 可以从 [COLMAP Build v4.1.0 release](https://github.com/lyehe/build_gpu_colmap/releases/tag/v4.1.0) 下载。
+推荐工作流依赖 PyCOLMAP，不依赖 COLMAP binary。`equirect-sfm`、`panorama-sfm` 和 ALIKED/LightGlue 路径都建议使用 CUDA-enabled PyCOLMAP。COLMAP 4.1.0 prebuild 和匹配的 PyCOLMAP wheels 可以从 [COLMAP Build v4.1.0 release](https://github.com/lyehe/build_gpu_colmap/releases/tag/v4.1.0) 下载。
 
 安装与当前机器 Python 版本、平台、CUDA/runtime 变体匹配的 PyCOLMAP wheel：
 
@@ -300,13 +332,23 @@ torchvision==0.25.0
 
 PyCOLMAP 有意没有固定在 `pyproject.toml` 中，因为正确的 wheel 和具体机器、CUDA build 绑定。
 
-`panorama-sfm` 的 `sparse/0`、`sparse_txt/0`、`sparse_equirectangular/0`、`sparse_equirectangular_txt/0` 都由 PyCOLMAP 写出。
+Windows full build 建议通过项目脚本安装和验证，避免手工补 DLL：
+
+```powershell
+.\scripts\setup_pycolmap_full.ps1 `
+  -WheelPath D:\Projects\build_gpu_colmap\third_party\colmap-for-pycolmap\wheelhouse\pycolmap-4.1.0-cp312-cp312-win_amd64.whl `
+  -NoDeps
+```
+
+脚本会安装本地 wheel，尝试把 Torch 自带的 cuDNN 9 runtime DLL 复制到 `pycolmap.libs`，并检查 CUDA、ALIKED、LightGlue 和 Caspar 是否可见。
+
+`equirect-sfm` 的 `images/`、`masks/`、`database.db`、`sparse/0`、`sparse_txt/0` 都由 PyCOLMAP 写出。`panorama-sfm` 额外会写出 `sparse_equirectangular/0` 和 `sparse_equirectangular_txt/0`，用于把 perspective rig 结果转换回全景帧坐标。
 
 ## 已知限制
 
 - Frame extraction 还不是 geometry-aware。它可能保留过近的帧，也可能在快速移动时漏掉覆盖。
 - SAM3 mask 依赖 prompt 质量。过宽 prompt 可能移除稳定结构；过窄 prompt 可能把动态物体留给 SfM。
-- `panorama-sfm` 假设输入是真 360 panorama，且宽度等于高度的两倍。
+- `equirect-sfm` 和 `panorama-sfm` 都假设输入是真 360 panorama，且宽度等于高度的两倍。
 - Caspar 支持取决于本地 COLMAP/PyCOLMAP build，而不只是 Python enum 是否存在。
 - 直接运行 `uv sync` 可能移除手动安装的、机器相关的 PyCOLMAP，因为 PyCOLMAP 没有作为项目 dependency 固定。
 
@@ -318,11 +360,12 @@ PyCOLMAP 有意没有固定在 `pyproject.toml` 中，因为正确的 wheel 和�
 extract 2 Hz sharp frames
 -> SAM3 dynamic masks
 -> merged COLMAP masks
--> perspective_overlapping panorama-sfm
--> PINHOLE virtual cameras
+-> equirect-sfm with EQUIRECTANGULAR cameras
+-> optional export-pinhole-3dgs
+-> perspective_overlapping PINHOLE virtual cameras
 -> sequential matching
 -> incremental mapper
 -> Caspar BA backend when available
 ```
 
-这条路线目前最符合常见 3DGS importer 的输入预期，同时保持 camera model 和 bundle-adjustment backend 与本地 COLMAP/Caspar build 兼容。
+这条路线先保留全景相机的原始几何，再导出常见 3DGS importer 更容易消费的 `PINHOLE` 数据集。旧的 `panorama-sfm` 路线仍适合需要直接在 perspective rig 上提特征和建图的兼容场景。

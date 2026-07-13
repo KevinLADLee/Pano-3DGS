@@ -8,17 +8,19 @@
 [![SAM3](https://img.shields.io/badge/masks-SAM3-111827)](#)
 
 把已经拼接好的 360 equirectangular MP4 转成适合 3D Gaussian Splatting
-工具导入的 perspective `PINHOLE` COLMAP 数据集。
+工具导入的 COLMAP 数据集。默认路线直接用 COLMAP `EQUIRECTANGULAR`
+相机重建，再导出为常见 3DGS importer 更容易接受的 perspective `PINHOLE`
+数据集。
 
 **标签：** `360-video` `equirectangular` `3dgs` `colmap` `pycolmap` `sam3`
-`caspar-ba` `panorama-sfm`
+`caspar-ba` `equirect-sfm` `panorama-sfm`
 
 ```text
 360 MP4
   -> 清晰全景帧
   -> SAM3 动态物体 mask
-  -> perspective PINHOLE panorama SfM
-  -> 3DGS 可导入的 COLMAP 数据集
+  -> EQUIRECTANGULAR PyCOLMAP SfM
+  -> 3DGS 可导入的 PINHOLE COLMAP 数据集
 ```
 
 当前主线完全依赖 PyCOLMAP；旧的 COLMAP binary 工作流已经从 CLI 中移除。
@@ -29,8 +31,9 @@
 
 - 从 360 视频中按时间窗口抽取清晰帧。
 - 使用 `third_party/sam3` submodule 中的官方 SAM3 生成动态物体 mask。
-- 把每张全景帧渲染成重叠的 perspective virtual camera rig。
-- 在 `PINHOLE` 相机上运行 PyCOLMAP feature extraction、matching 和 mapping。
+- 直接在 `EQUIRECTANGULAR` 全景相机上运行 PyCOLMAP feature extraction、matching 和 mapping。
+- 可把全景重建导出成重叠的 perspective `PINHOLE` 数据集，供标准 3DGS importer 使用。
+- 仍然保留旧的 perspective-rig `panorama-sfm` 路线。
 - 本地 PyCOLMAP wheel 支持时可使用 Caspar bundle adjustment。
 - 同时写出 COLMAP binary 和 text sparse model。
 - 使用 TOML 配置，CLI 参数可覆盖配置文件。
@@ -109,9 +112,25 @@ CLI 参数 > TOML 配置 > 内置默认值
 ```toml
 [sam3]
 model = "models/facebook/sam3"
+prompts = ["sky"]
 
 [pycolmap]
 require_cuda = true
+
+[sfm]
+feature_type = "sift"
+feature_matcher = "auto"
+max_features = 12000
+
+[equirect_sfm]
+matcher = "sequential"
+mapper = "incremental"
+ba_backend = "caspar"
+
+[pinhole_3dgs]
+enabled = true
+render_type = "perspective_overlapping"
+workers = 0
 
 [panorama_sfm]
 render_type = "perspective_overlapping"
@@ -135,6 +154,9 @@ uv run pano-3dgs --config path/to/file.toml run --video /path/to/video.mp4
 uv run pano-3dgs run \
   --video /path/to/video.mp4
 ```
+
+默认会执行 `extract -> sam3/masks -> equirect-sfm -> export-pinhole-3dgs`。
+如果要走旧的 perspective rig SfM 路线，使用 `--sfm-workflow panorama`。
 
 常用覆盖参数：
 
@@ -184,7 +206,23 @@ uv run pano-3dgs sam3 \
   --run "$RUN"
 ```
 
-运行 perspective panorama SfM：
+运行直接 equirectangular SfM：
+
+```bash
+uv run pano-3dgs equirect-sfm \
+  --run "$RUN" \
+  --clean-equirect-sfm
+```
+
+导出标准 perspective `PINHOLE` 3DGS 数据集：
+
+```bash
+uv run pano-3dgs export-pinhole-3dgs \
+  --run "$RUN" \
+  --clean-pinhole-3dgs
+```
+
+运行旧的 perspective panorama SfM：
 
 ```bash
 uv run pano-3dgs panorama-sfm \
@@ -215,6 +253,17 @@ runs/<scene>_2hz_7680/
   dynamic_masks/
   dynamic_mask_debug/
   colmap_masks/
+  equirect_sfm/
+    images/
+    masks/
+    database.db
+    sparse/0/
+    sparse_txt/0/
+  pinhole_3dgs/
+    images/
+    masks/
+    sparse/0/
+    sparse_txt/0/
   panorama_sfm/
     images/
     masks/
@@ -228,12 +277,15 @@ runs/<scene>_2hz_7680/
 标准 3DGS 导入通常使用：
 
 ```text
-panorama_sfm/images/
-panorama_sfm/sparse/0/
+pinhole_3dgs/images/
+pinhole_3dgs/sparse/0/
 ```
 
-`sparse_equirectangular/0` 是把重建结果映射回原始全景帧后的辅助模型，
-主要用于检查，或用于支持 COLMAP `EQUIRECTANGULAR` 相机模型的工具。
+`equirect_sfm/sparse/0` 保留直接全景重建结果，主要用于明确支持
+COLMAP `EQUIRECTANGULAR` 相机模型的工具。
+
+`panorama_sfm/` 只会在直接运行 `panorama-sfm`，或 `run --sfm-workflow panorama`
+时写出。
 
 ## Mask
 
@@ -245,11 +297,14 @@ black = ignore
 ```
 
 `sam3` 会写出 `dynamic_masks/`，并默认写出合并后的 `colmap_masks/`。
-也可以单独运行 fallback 合并命令：
+也可以单独运行合并命令：
 
 ```bash
 uv run pano-3dgs masks --run "$RUN"
 ```
+
+SfM 或 PINHOLE 导出命令启用输入 mask 时，每张选中的全景图都必须在
+`colmap_masks/` 中有对应文件。缺失 mask 会直接报错，不会静默改成无 mask 处理。
 
 `[masks].heuristics = "auto"` 表示：优先使用 SAM3 mask；只有缺少动态 mask
 的帧才使用 sky / zenith / nadir 启发式 mask。
@@ -278,17 +333,25 @@ uv run pano-3dgs panorama-sfm \
 
 ## 重建缓存控制
 
-已有 perspective images、masks、features、matches 会尽量复用。
+已有 perspective images、masks、features、matches 会尽量复用。数据库复用前会
+同时校验相机模型和完整图片集合。Perspective 输出还会记录 `render_config.json`；
+修改渲染几何参数或输入 mask 模式时会自动重新渲染。
 
 ```bash
+uv run pano-3dgs equirect-sfm --run "$RUN" --rerun-equirect-features
+uv run pano-3dgs equirect-sfm --run "$RUN" --rerun-equirect-matching
+uv run pano-3dgs equirect-sfm --run "$RUN" --clean-equirect-sfm
+uv run pano-3dgs export-pinhole-3dgs --run "$RUN" --rerender-pinhole
+uv run pano-3dgs export-pinhole-3dgs --run "$RUN" --clean-pinhole-3dgs
 uv run pano-3dgs panorama-sfm --run "$RUN" --rerender-perspective
 uv run pano-3dgs panorama-sfm --run "$RUN" --rerun-panorama-features
 uv run pano-3dgs panorama-sfm --run "$RUN" --rerun-panorama-matching
 uv run pano-3dgs panorama-sfm --run "$RUN" --clean-panorama-sfm
 ```
 
-修改 render settings、camera model 或主要 mask 设置后，使用
-`--clean-panorama-sfm`。
+`--rerun-*-matching` 会保留已有 features，只清空 match 表。修改 feature 模型或
+feature mask 后使用 `--rerun-*-features`；修改 matcher 设置后使用
+`--rerun-*-matching`。只有需要完整重建生成目录时才使用 `--clean-*`。
 
 ## 故障排查
 
